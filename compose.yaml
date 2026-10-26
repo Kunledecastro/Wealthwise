@@ -1,0 +1,111 @@
+# Wealthwise — local development and single-server self-hosting.
+#   cp .env.example .env   (edit passwords)
+#   docker compose up --build
+# Optional profiles:  --profile ai (Ollama)   --profile prod (Caddy with TLS)
+name: wealthwise
+
+x-api-env: &api-env
+  APP_NAME: ${APP_NAME:-Wealthwise}
+  APP_ENV: ${APP_ENV:-development}
+  APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+  DEFAULT_CURRENCY: ${DEFAULT_CURRENCY:-NGN}
+  DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Africa/Lagos}
+  DATABASE_URL: postgresql+psycopg://wealthwise_app:${WW_APP_PASSWORD}@db:5432/${POSTGRES_DB:-wealthwise}
+  MIGRATOR_DATABASE_URL: postgresql+psycopg://wealthwise_migrator:${WW_MIGRATOR_PASSWORD}@db:5432/${POSTGRES_DB:-wealthwise}
+  SECRET_KEY: ${SECRET_KEY}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
+  SESSION_ABSOLUTE_DAYS: ${SESSION_ABSOLUTE_DAYS:-7}
+  LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+  LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+  REGISTRATION_MODE: ${REGISTRATION_MODE:-invite_only}
+  EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  EMAIL_FROM: ${EMAIL_FROM:-no-reply@example.com}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wealthwise}
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env}
+      WW_MIGRATOR_PASSWORD: ${WW_MIGRATOR_PASSWORD:?set WW_MIGRATOR_PASSWORD in .env}
+      WW_APP_PASSWORD: ${WW_APP_PASSWORD:?set WW_APP_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Not published to the host: only reachable on the private compose network.
+
+  migrate:
+    build: ./api
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      FORWARDED_ALLOW_IPS: "*"   # only the web/caddy containers can reach the api on this network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_APP_NAME: ${APP_NAME:-Wealthwise}
+        API_INTERNAL_URL: http://api:8000
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3000}:3000"   # localhost only by default
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["prod"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [web, api]
+
+volumes:
+  pgdata:
+  ollama:
+  caddy_data:

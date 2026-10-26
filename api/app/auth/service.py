@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -21,11 +22,19 @@ def create_user(
     db: Session, *, email: str, password: str, display_name: str, role: str = "member"
 ) -> User:
     s = get_settings()
+    # Same validation the login form applies, so every account can actually sign in
+    # (the CLI path bypasses the HTTP schema).
+    try:
+        email = validate_email(email.strip(), check_deliverability=False).normalized
+    except EmailNotValidError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, f"Invalid email address: {exc}"
+        ) from exc
     validate_new_password(password, email)
     if db.scalar(select(User.id).where(User.email == email)) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists.")
     user = User(
-        email=email.strip(),
+        email=email,
         password_hash=hash_password(password),
         display_name=display_name.strip(),
         role=role,

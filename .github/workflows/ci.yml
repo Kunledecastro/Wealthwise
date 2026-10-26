@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Create database roles
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE wealthwise_migrator LOGIN PASSWORD 'devpass';
+          CREATE ROLE wealthwise_app LOGIN PASSWORD 'devpass';
+          CREATE DATABASE wealthwise_test OWNER wealthwise_migrator;
+          SQL
+          psql -h localhost -U postgres -d wealthwise_test -c "CREATE EXTENSION citext; GRANT USAGE ON SCHEMA public TO wealthwise_app; GRANT ALL ON SCHEMA public TO wealthwise_migrator;"
+      - name: Install
+        working-directory: api
+        run: uv sync --frozen
+      - name: Lint and type-check
+        working-directory: api
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy app
+      - name: Migration round-trip
+        run: ./scripts/migrate_check.sh
+      - name: Tests
+        working-directory: api
+        run: uv run pytest
+      - name: Dependency audit
+        working-directory: api
+        run: uv run pip-audit
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm audit --prod
+
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: cp .env.example .env && docker compose config --quiet
+      - name: Build images
+        run: docker compose build migrate api web

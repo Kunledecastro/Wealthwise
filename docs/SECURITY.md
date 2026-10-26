@@ -1,6 +1,6 @@
 # Security design (Phase 0 proposal)
 
-Status: **PROPOSED.** Controls listed here are design intent, not implemented. This document makes **no claim of compliance** with any law, regulation or certification.
+Status: **Phase 1 controls implemented** (marked below). Everything else is still design intent. This document makes **no claim of compliance** with any law, regulation or certification.
 
 ## 1. Assets and trust boundaries
 
@@ -70,3 +70,27 @@ To be verified with a qualified Nigerian lawyer/compliance adviser — listed so
 - Users access only over HTTPS in production.
 - Ollama runs on the same private network and is not exposed publicly.
 - Email (for password reset) uses an SMTP provider; in local dev, emails are written to the console/Mailpit.
+
+## 6. Implementation status (Phase 1)
+
+| Control | Status |
+|---|---|
+| Argon2id hashing, rehash on login when parameters change | Implemented |
+| Password rules: 10–128 chars, common-password blocklist, not containing email name | Implemented (local list only, no external breach API) |
+| Opaque server-side sessions, hashed at rest, idle 30 min / absolute 7 days, rotation on login | Implemented |
+| Cookies: HttpOnly, SameSite=Lax, Secure + `__Host-` prefix when `COOKIE_SECURE=true` | Implemented |
+| CSRF: double-submit token + Origin/Referer check on all state-changing `/api` requests | Implemented |
+| Login rate limit (per email hash and per IP), reset-request and invite-use limits | Implemented (Postgres-backed) |
+| Generic login errors, timing-equalised for unknown emails | Implemented |
+| Reset: single-use, 30 min, newest-only, revokes all sessions, identical response for unknown emails | Implemented |
+| Invite-only registration, single-use invites, optional email binding, 7-day expiry | Implemented |
+| Tokens in URL fragments, removed from browser history once read | Implemented |
+| Admin endpoints return 404 to non-admins | Implemented |
+| Append-only audit trail (DB privilege enforced) | Implemented |
+| Separate migrator/app DB roles; DB not exposed outside the compose network | Implemented |
+| Log redaction (emails, long digit runs, tokens, sensitive keys); validation errors never echo input | Implemented |
+| Security headers (CSP, nosniff, frame denial, no-referrer, no-store on API, HSTS when secure) | Implemented (CSP has `unsafe-inline`, D-019) |
+| Production start-up refuses insecure config | Implemented |
+| Non-root containers | Implemented |
+| TLS via Caddy | Configured, not yet exercised |
+| Encryption at rest, encrypted backups, RLS, nonce CSP, container scanning | Planned (hardening phase) |

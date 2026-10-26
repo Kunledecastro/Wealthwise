@@ -6,23 +6,60 @@ Personal finance and spending intelligence web app for the Nigerian market (NGN 
 
 ## Status
 
-**Phase 0 — design only.** No application code yet. See [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md).
+**Phase 1 complete (awaiting product-owner review):** sign-in, invite-only registration, password reset, sessions, preferences, admin invites, audit trail. No financial features yet. See [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md).
 
-## Stack (proposed)
+## Run it with Docker (recommended)
 
-Next.js + TypeScript + Tailwind + shadcn/ui + Recharts · FastAPI + Pydantic + SQLAlchemy + Alembic · PostgreSQL 16 · optional Ollama · Docker Compose · Caddy (production TLS).
+Requires Docker with Compose v2.
+
+```bash
+cp .env.example .env
+# edit .env: set the three database passwords (letters and digits only) and SECRET_KEY
+docker compose up --build -d
+docker compose run --rm -it api python -m app.cli create-admin --email you@example.com --name "Your Name"
+```
+
+Open http://localhost:3000 and sign in. Create invites from **Admin** in the app, or with
+`docker compose run --rm api python -m app.cli invite`.
+
+In development, password-reset emails are printed in the API log: `docker compose logs api`.
+If someone is locked out, `docker compose run --rm api python -m app.cli reset-link --email them@example.com` prints a one-time reset link.
+
+## Run it without Docker (development)
+
+Requires PostgreSQL 16, Python 3.13 with [uv](https://docs.astral.sh/uv/), Node 22 with pnpm.
+
+```bash
+make dev-db            # creates local roles/databases (dev password "devpass") and migrates
+cd api && uv sync && cd ../web && pnpm install && cd ..
+make dev-api           # terminal 1 — http://localhost:8000/api/docs
+make dev-web           # terminal 2 — http://localhost:3000
+cd api && uv run python -m app.cli create-admin --email you@example.com --name "You"
+```
+
+## Checks
+
+```bash
+make lint            # ruff, mypy, eslint, tsc
+make test            # pytest (needs the local test database) + vitest
+make migrate-check   # upgrade → downgrade → upgrade + drift check
+make audit           # pip-audit + pnpm audit
+```
+
+CI runs the same checks on every push (`.github/workflows/ci.yml`).
+
+## Production (self-hosted Linux)
+
+Set `APP_ENV=production`, `COOKIE_SECURE=true`, `APP_BASE_URL=https://your.domain`, `DOMAIN=your.domain`, a strong `SECRET_KEY`, and SMTP settings, then
+`docker compose --profile prod up -d`. Caddy obtains TLS certificates automatically. Port 3000 is bound to localhost by default, so outside traffic can only arrive through Caddy. The API refuses to start with unsafe production settings. A full deployment and backup guide comes in the hardening phase.
 
 ## Documentation
 
 | Doc | Contents |
 |---|---|
-| [ARCHITECTURE](docs/ARCHITECTURE.md) | System shape, modules, ingestion pipeline, AI layer, environment findings |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | System shape, modules, ingestion pipeline, AI layer |
 | [DATABASE](docs/DATABASE.md) | Data model, money conventions, dedupe, calculation rules |
-| [SECURITY](docs/SECURITY.md) | Threat model, controls, regulatory review list |
-| [TESTING](docs/TESTING.md) | Test layers and rules |
+| [SECURITY](docs/SECURITY.md) | Threat model, controls and their status, regulatory review list |
+| [TESTING](docs/TESTING.md) | Test layers, how to run, latest results |
 | [DECISIONS](docs/DECISIONS.md) | Decision log |
-| [PHASE_STATUS](docs/PHASE_STATUS.md) | Roadmap, Phase 0 findings, dependency licences, Phase 1 acceptance criteria |
-
-## Running locally
-
-Available from Phase 1 (`cp .env.example .env && docker compose up`).
+| [PHASE_STATUS](docs/PHASE_STATUS.md) | Roadmap and per-phase reports |

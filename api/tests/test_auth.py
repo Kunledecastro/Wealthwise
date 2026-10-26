@@ -327,3 +327,20 @@ def test_change_password_signs_out_other_devices(api_factory, make_user):
     assert ok.status_code == 200
     assert me.get("/api/me").status_code == 200
     assert other.get("/api/me").status_code == 401
+
+
+def test_create_user_rejects_emails_login_would_reject():
+    """Regression: CLI-created accounts must be able to sign in."""
+    import pytest
+    from fastapi import HTTPException
+
+    from app.auth.service import create_user
+    from app.db.session import get_sessionmaker
+
+    db = get_sessionmaker()()
+    try:
+        with pytest.raises(HTTPException) as exc:
+            create_user(db, email="admin@wealthwise.local", password=PASSWORD, display_name="A")
+        assert exc.value.status_code == 422
+    finally:
+        db.close()

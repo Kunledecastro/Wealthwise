@@ -23,7 +23,7 @@
 - No phase is declared complete unless the commands were actually run; results are pasted into `PHASE_STATUS.md` with date.
 - Any bug in a financial figure gets a regression test before the fix.
 
-## Commands (to exist from Phase 1)
+## Commands
 
 ```
 make test        # backend + frontend unit/integration
@@ -31,3 +31,21 @@ make lint        # ruff, mypy, eslint, tsc --noEmit
 make migrate-check
 make e2e         # Playwright (requires stack running)
 ```
+
+## Local test database
+
+Backend tests run against a real PostgreSQL database `wealthwise_test`, as the real app role. Create it once with `make dev-db`. Tests run all migrations from scratch at the start of each session and clean the tables after each test.
+
+## Latest results (Phase 1, 26 Oct 2026)
+
+| Check | Result |
+|---|---|
+| pytest | 60 passed |
+| vitest | 6 passed |
+| ruff check / ruff format / mypy --strict | 0 issues |
+| eslint / tsc --noEmit | 0 issues |
+| next build | success |
+| migrate-check (incl. `alembic check` drift) | OK |
+| pip-audit / pnpm audit --prod | no known vulnerabilities |
+| Mutation spot-check: CSRF middleware removed | 3 tests fail as expected |
+| Playwright e2e / axe | **Not run** — browser download blocked in build workspace; planned for CI in a later phase |
