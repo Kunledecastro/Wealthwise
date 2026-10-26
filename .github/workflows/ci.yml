@@ -81,4 +81,12 @@ jobs:
       - name: Validate compose file
         run: cp .env.example .env && docker compose config --quiet
       - name: Build images
-        run: docker compose build migrate api web
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! docker compose build --progress=plain api web 2>&1 | tee build.log; then
+            # Surface the failure as an annotation (readable without opening raw logs).
+            msg=$(grep -E "ERROR|error|failed|ERR_" build.log | tail -n 25 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Docker build failed::${msg}"
+            exit 1
+          fi
