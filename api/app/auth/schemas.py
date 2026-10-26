@@ -132,3 +132,7 @@ class AdminUserOut(BaseModel):
 
 class UserStatusIn(Strict):
     status: str = Field(pattern="^(active|disabled)$")
+
+
+class UserRoleIn(Strict):
+    role: str = Field(pattern="^(admin|member)$")

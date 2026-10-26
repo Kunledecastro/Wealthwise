@@ -5,7 +5,7 @@ TIMESTAMPTZ in UTC, every user-owned row carries user_id.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -13,14 +13,18 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -202,4 +206,166 @@ class AuditEvent(Base):
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: accounts, transactions, revisions
+# Money: positive BIGINT minor units + direction + currency (docs/DATABASE.md, D-004).
+# ---------------------------------------------------------------------------
+
+ACCOUNT_TYPES = ("bank", "wallet", "cash", "savings", "card", "loan")
+ACCOUNT_SOURCES = ("manual", "imported", "simulated", "connected")
+TXN_KINDS = ("income", "expense", "fee", "refund", "transfer", "reversal", "adjustment")
+TXN_STATUSES = ("pending", "posted", "failed", "reversed")
+TXN_SOURCES = ("manual", "csv", "xlsx", "pdf", "simulated", "email", "open_banking")
+MAX_MINOR = 10**15  # ₦10 trillion in kobo; well inside JSON's safe-integer range
+
+
+def _in(col: str, values: tuple[str, ...]) -> str:
+    return f"{col} IN ({', '.join(repr(v) for v in values)})"
+
+
+class Account(TimestampMixin, Base):
+    __tablename__ = "accounts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    institution_name: Mapped[str | None] = mapped_column(String(80))
+    mask: Mapped[str | None] = mapped_column(String(4))
+    currency: Mapped[str] = mapped_column(String(3), ForeignKey("currencies.code"), nullable=False)
+    opening_balance_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    opening_balance_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="manual")
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "id", name="uq_accounts_user_id_id"),
+        CheckConstraint(_in("type", ACCOUNT_TYPES), name="ck_accounts_type"),
+        CheckConstraint(_in("source", ACCOUNT_SOURCES), name="ck_accounts_source"),
+        CheckConstraint("mask IS NULL OR mask ~ '^[0-9]{4}$'", name="ck_accounts_mask"),
+        CheckConstraint(
+            f"abs(opening_balance_minor) <= {MAX_MINOR}", name="ck_accounts_opening_range"
+        ),
+    )
+
+
+class Transaction(TimestampMixin, Base):
+    __tablename__ = "transactions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    direction: Mapped[str] = mapped_column(String(6), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), ForeignKey("currencies.code"), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
+    posting_date: Mapped[date | None] = mapped_column(Date)
+    merchant: Mapped[str | None] = mapped_column(String(120))
+    narration: Mapped[str | None] = mapped_column(String(500))
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="manual")
+    external_ref: Mapped[str | None] = mapped_column(String(128))
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    transfer_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    reverses_transaction_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("transactions.id", ondelete="SET NULL")
+    )
+    refund_of_transaction_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("transactions.id", ondelete="SET NULL")
+    )
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        # The account must belong to the same user as the transaction.
+        ForeignKeyConstraint(
+            ["user_id", "account_id"],
+            ["accounts.user_id", "accounts.id"],
+            name="fk_transactions_account_same_user",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(_in("kind", TXN_KINDS), name="ck_txn_kind"),
+        CheckConstraint("direction IN ('debit', 'credit')", name="ck_txn_direction"),
+        CheckConstraint(_in("status", TXN_STATUSES), name="ck_txn_status"),
+        CheckConstraint(_in("source", TXN_SOURCES), name="ck_txn_source"),
+        CheckConstraint(
+            f"amount_minor > 0 AND amount_minor <= {MAX_MINOR}", name="ck_txn_amount_range"
+        ),
+        # Kind/direction pairs that are always fixed.
+        CheckConstraint(
+            "(kind IN ('income', 'refund') AND direction = 'credit')"
+            " OR (kind IN ('expense', 'fee') AND direction = 'debit')"
+            " OR kind IN ('transfer', 'reversal', 'adjustment')",
+            name="ck_txn_kind_direction",
+        ),
+        CheckConstraint(
+            "(kind = 'transfer') = (transfer_group_id IS NOT NULL)", name="ck_txn_transfer_group"
+        ),
+        CheckConstraint(
+            "(kind = 'reversal') = (reverses_transaction_id IS NOT NULL)",
+            name="ck_txn_reversal_link",
+        ),
+        CheckConstraint(
+            "refund_of_transaction_id IS NULL OR kind = 'refund'", name="ck_txn_refund_link"
+        ),
+        Index("ix_txn_user_date", "user_id", "transaction_date", "id"),
+        Index("ix_txn_account", "account_id"),
+        Index("ix_txn_transfer_group", "transfer_group_id"),
+        Index(
+            "uq_txn_account_external_ref",
+            "account_id",
+            "external_ref",
+            unique=True,
+            postgresql_where=text("external_ref IS NOT NULL"),
+        ),
+        Index(
+            "uq_txn_account_fingerprint",
+            "account_id",
+            "fingerprint",
+            unique=True,
+            postgresql_where=text("fingerprint IS NOT NULL"),
+        ),
+    )
+
+
+class TransactionRevision(Base):
+    """One row per create/update/delete/reverse of a transaction, written in the same DB
+    transaction as the change itself."""
+
+    __tablename__ = "transaction_revisions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    transaction_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    changes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    reason: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('create', 'update', 'delete', 'reverse')", name="ck_rev_action"
+        ),
     )

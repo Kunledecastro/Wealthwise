@@ -37,7 +37,10 @@ from app.core.config import get_settings  # noqa: E402
 from app.db.session import get_sessionmaker  # noqa: E402
 
 PASSWORD = "Correct-Horse-7-Battery"
-TABLES = "users, user_preferences, sessions, password_reset_tokens, invites, auth_attempts"
+TABLES = (
+    "users, user_preferences, sessions, password_reset_tokens, invites, auth_attempts, "
+    "accounts, transactions, transaction_revisions"
+)
 
 
 @pytest.fixture(scope="session", autouse=True)

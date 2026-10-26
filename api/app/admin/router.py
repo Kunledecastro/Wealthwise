@@ -10,6 +10,7 @@ from app.auth.schemas import (
     InviteCreatedOut,
     InviteIn,
     InviteOut,
+    UserRoleIn,
     UserStatusIn,
 )
 from app.auth.service import create_invite, invite_status, invite_url
@@ -124,6 +125,42 @@ def set_user_status(
         audit(
             db,
             f"admin.user_{body.status}",
+            user_id=u.id,
+            actor_user_id=auth.user.id,
+            ip=client_ip(request),
+            target_type="user",
+            target_id=str(u.public_id),
+        )
+        db.commit()
+    return AdminUserOut(
+        id=u.public_id,
+        email=u.email,
+        display_name=u.display_name,
+        role=u.role,
+        status=u.status,
+        created_at=u.created_at,
+        last_login_at=u.last_login_at,
+    )
+
+
+@router.post("/users/{user_id}/role", response_model=AdminUserOut)
+def set_user_role(
+    user_id: uuid.UUID,
+    body: UserRoleIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_admin),
+) -> AdminUserOut:
+    u = db.scalar(select(User).where(User.public_id == user_id))
+    if u is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found.")
+    if u.id == auth.user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot change your own role.")
+    if u.role != body.role:
+        u.role = body.role
+        audit(
+            db,
+            f"admin.user_role_{body.role}",
             user_id=u.id,
             actor_user_id=auth.user.id,
             ip=client_ip(request),

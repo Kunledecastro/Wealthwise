@@ -45,48 +45,42 @@ def test_cross_origin_rejected_even_with_token(api, make_user):
 
 # ---------- authorisation ----------
 
-PROTECTED = [
-    ("GET", "/api/me"),
-    ("GET", "/api/me/preferences"),
-    ("PATCH", "/api/me/preferences"),
-    ("POST", "/api/auth/logout-all"),
-    ("POST", "/api/auth/password/change"),
-    ("GET", "/api/admin/invites"),
-    ("POST", "/api/admin/invites"),
-    ("GET", "/api/admin/users"),
-]
+# Everything else under /api requires a signed-in user. New routes are protected by
+# default in this test: making one public requires adding it here deliberately.
+PUBLIC = {
+    ("GET", "/api/health"),
+    ("GET", "/api/auth/csrf"),
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/register"),
+    ("POST", "/api/auth/logout"),
+    ("POST", "/api/auth/password/forgot"),
+    ("POST", "/api/auth/password/reset"),
+}
 
 
-@pytest.mark.parametrize(("method", "url"), PROTECTED)
-def test_anonymous_gets_401(api, method, url):
-    hdr = {"X-CSRF-Token": api.client.cookies.get("ww_csrf")}
-    r = api.client.request(method, url, json={}, headers=hdr)
-    assert r.status_code == 401, (method, url, r.status_code)
-
-
-def test_every_route_is_classified():
-    """Guard: a new route must be added to PROTECTED or PUBLIC, forcing an authz decision."""
+def _all_routes():
     from app.main import app
 
-    public = {
-        ("GET", "/api/health"),
-        ("GET", "/api/auth/csrf"),
-        ("POST", "/api/auth/login"),
-        ("POST", "/api/auth/register"),
-        ("POST", "/api/auth/logout"),
-        ("POST", "/api/auth/password/forgot"),
-        ("POST", "/api/auth/password/reset"),
-    }
-    admin_param = {
-        ("POST", "/api/admin/invites/{invite_id}/revoke"),
-        ("POST", "/api/admin/users/{user_id}/status"),
-    }
-    known = public | set(PROTECTED) | admin_param
-    routes = {
+    return sorted(
         (method.upper(), path) for path, ops in app.openapi()["paths"].items() for method in ops
-    }
-    assert len(routes) >= len(known) - 1  # sanity: the route listing actually worked
-    assert routes - known == set(), f"Unclassified routes: {routes - known}"
+    )
+
+
+def test_route_listing_works():
+    routes = _all_routes()
+    assert len(routes) > 20
+    assert set(routes) >= PUBLIC, "a PUBLIC entry no longer exists"
+
+
+@pytest.mark.parametrize(("method", "path"), [r for r in _all_routes() if r not in PUBLIC])
+def test_every_non_public_route_rejects_anonymous(api, method, path):
+    url = path
+    for param in ("{invite_id}", "{user_id}", "{account_id}", "{txn_id}"):
+        url = url.replace(param, "00000000-0000-4000-8000-000000000000")
+    assert "{" not in url, f"add a placeholder for {path}"
+    hdr = {"X-CSRF-Token": api.client.cookies.get("ww_csrf")}
+    r = api.client.request(method, url, json={}, headers=hdr)
+    assert r.status_code == 401, (method, path, r.status_code)
 
 
 def test_users_only_see_and_change_their_own_preferences(api_factory, make_user):
