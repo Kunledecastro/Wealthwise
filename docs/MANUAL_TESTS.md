@@ -1,4 +1,11 @@
-# Manual tests — Phase 1
+# Manual tests
+
+- [Phase 2](#phase-2) (current)
+- [Phase 1](#phase-1) (passed 26 Oct 2026)
+
+---
+
+## Phase 1
 
 Time needed: about 20–30 minutes (the first build takes 5–10 of those).
 Record each result as Pass / Fail. For any failure, note what you saw and run `docker compose logs api web > logs.txt`.
@@ -143,3 +150,107 @@ Reply with a line per test, for example `M1 pass, M2 pass, M5 fail: thresholds d
 
 - Stop and keep data: `docker compose down`
 - Stop and erase everything: `docker compose down -v`
+
+
+---
+
+## Phase 2
+
+Time needed: about 25 minutes. Use your normal browser, signed in as yourself, at http://localhost:3000.
+
+### 0. Update and restart
+
+In PowerShell, in the Wealthwise folder:
+```
+git pull
+docker compose up --build -d
+docker compose ps -a
+```
+**Expected:** as before, `migrate` shows Exited (0), and `db`/`api` are healthy. Refresh the browser. The top bar now shows **Home · Transactions · Accounts · Settings · Admin**.
+
+### N1 — Add accounts
+1. Go to **Accounts** → **Add account**.
+2. Type: Bank account. Name: `GTBank`. Last 4 digits: `4821`. Starting balance: `350,000`. As of: a date about 3 weeks ago. Click **Add account**.
+3. Add a second account. Type: Wallet. Name: `Kuda`. Starting balance: `0`. Same date.
+4. Try to add a third account with last 4 digits `12AB`, then with a date in the future.
+
+**Expected:** both accounts show **₦350,000.00** and **₦0.00** with a "Manual · estimated" badge. Step 4 shows errors and nothing is saved.
+
+### N2 — Income, expense and the monthly summary
+1. Go to **Home** → **Add transaction**. Type: **Income**. Amount `450,000`. Account GTBank. Date: this month. Payer `Salary`. Save.
+2. Add an **Expense**: `25,000.50` at `Shoprite` from GTBank, this month.
+3. Add a **Bank fee**: `52.50`, description `SMS alert`, GTBank.
+
+**Expected:** Home shows:
+- Income **₦450,000.00**
+- Spending **₦25,053.00** ("Includes bank fees")
+- Net cash flow **₦424,947.00**
+- GTBank **₦774,947.00**
+
+### N3 — Refund reduces spending (not income)
+1. **Transactions** → **Add** → **Refund**: `5,000`, merchant `Shoprite`, GTBank, this month.
+
+**Expected:** on Home, income stays **₦450,000.00**. Spending drops to **₦20,053.00** with "After refunds of ₦5,000.00". GTBank shows **₦779,947.00**.
+
+### N4 — Transfer between your accounts
+1. **Add** → **Transfer**: `100,000`, from GTBank to Kuda.
+
+**Expected:**
+- GTBank is **₦679,947.00** and Kuda **₦100,000.00**. The total stays **₦779,947.00**.
+- Income and spending on Home **don't change**.
+- In Transactions the transfer appears twice: "Transfer to Kuda" and "Transfer from GTBank".
+
+### N5 — Pending, then completed or failed
+1. **Add** an **Expense**: `1,500` at `Bolt` from Kuda, status **Pending**.
+2. Check Home, then open the Bolt transaction in Transactions → **Mark completed**.
+3. Add another pending expense of `800`, open it → **Mark failed**.
+
+**Expected:**
+- After step 1, Spending is unchanged and Pending shows **−₦1,500.00**. On Accounts, Kuda shows "Including pending: ₦98,500.00".
+- After step 2, spending rises by ₦1,500 and Kuda is ₦98,500.00.
+- After step 3, the ₦800 is shown crossed out as "Failed" and counts nowhere.
+
+### N6 — Edit with history
+1. Open the **Shoprite** expense → **Edit**. Change the amount to `24,000` and the reason to `typo`. Save.
+2. Look at **History** at the bottom of the panel.
+
+**Expected:** the balance and spending update by ₦1,000.50. History shows "Created" and "Edited: Amount: ₦25,000.50 → ₦24,000.00 · Reason: typo".
+
+### N7 — Bank reversal
+1. **Add** an expense: `4,400` at `Netflix` from Kuda, Completed.
+2. Open it → **Bank reversed it** → reason `double charge` → **Record reversal**.
+
+**Expected:**
+- Kuda's balance is back where it was before Netflix.
+- Netflix shows crossed out as "Reversed", with a separate "Reversal of Netflix" entry.
+- The original can't be edited except its notes.
+- Deleting the reversal entry makes Netflix count again. Try it, then reverse again to tidy up.
+
+### N8 — Delete
+1. Open the transfer from N4 → **Delete** → confirm.
+
+**Expected:** both sides disappear, and the balances return to GTBank +₦100,000 / Kuda −₦100,000 compared with N4. Re-add the transfer if you want to keep your test data tidy.
+
+### N9 — Filters, search and CSV
+1. In **Transactions**: search `shop`, then filter Type = Refund, then Status = Pending, then a date range. Click **Clear filters**.
+2. Click **CSV** and open the file in Excel.
+
+**Expected:** each filter narrows the list correctly. The CSV opens with ₦ amounts (negative for spending) and readable columns.
+
+### N10 — Settings: email, export, delete
+1. **Settings → Sign-in email**: enter a new email and your password → **Change email**. Sign out and sign in with the new email.
+2. **Settings → Your data → Everything (JSON)**. The file downloads and contains your accounts and transactions.
+3. **Delete my account** as Ada (from Phase 1), not as yourself:
+   - Sign in as Ada.
+   - Settings → Delete my account… → enter Ada's password → type `DELETE` → **Delete everything**.
+   - Ada can no longer sign in.
+4. As yourself (the only admin), open Delete my account…, fill it in and submit.
+
+**Expected:** step 4 says "You are the only admin…" and nothing is deleted. **Don't** make Ada an admin first unless you really mean to test that path.
+
+### N11 — Mobile and keyboard (quick)
+- With F12 + Ctrl+Shift+M (iPhone SE), add an expense from Home. The form appears as a bottom sheet and the amount field shows a number keypad on a real phone.
+- Press **Esc** to close a panel. Use Tab to move through the Add-transaction form.
+
+### Reporting back
+Reply in one line, for example `N1 pass … N7 fail: …`, with a screenshot for any failure.

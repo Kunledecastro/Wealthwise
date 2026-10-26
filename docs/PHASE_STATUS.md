@@ -3,8 +3,8 @@
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Discovery, architecture, data model, security design, dependencies, acceptance criteria | **Approved** (26 Oct 2026) |
-| 1 | Repo scaffold, Docker Compose, CI, FastAPI + Next.js skeleton, Postgres + Alembic, **authentication & user preferences** | **Complete — all manual checks passed** (26 Oct 2026) |
-| 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export and account deletion | Not started |
+| 1 | Repo scaffold, Docker Compose, CI, FastAPI + Next.js skeleton, Postgres + Alembic, **authentication & user preferences** | **Accepted** (26 Oct 2026) |
+| 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export, account deletion, email change | **Complete — awaiting your manual checks** (26 Oct 2026) |
 | 3 | Ingestion framework + CSV/XLSX adapter, dedupe, import review screen, simulated bank events | Not started |
 | 4 | Categories, rules engine, review queue, learn-from-correction | Not started |
 | 5 | Dashboard and reports (CSV export, printable summary) | Not started |
@@ -172,3 +172,72 @@ Root: `compose.yaml`, `.env.example`, `Makefile`, `deploy/` (Postgres init, Cadd
 ### Phase 2 preview (needs your approval)
 
 Financial accounts (bank, wallet, cash, savings) with opening balances, changing your sign-in email from Settings, and transactions (manual entry, edit history, statuses, filters). The **ledger engine** handles transfers, refunds, reversals and pending items, with exhaustive unit tests. Phase 2 also adds full data export and account deletion.
+
+---
+
+## Phase 2 — report (26 Oct 2026)
+
+**Objective:** record money accurately. You can create accounts, enter and correct transactions, and see balances and monthly totals calculated by one tested engine. This phase also covers data export, account deletion and changing your sign-in email.
+
+### What was built
+
+- **Ledger engine** (`api/app/ledger/`): a pure calculation module with no database access, plus `RULES.md` (R1–R12, B1–B4). It has 100% branch coverage and five property tests.
+- **Migration 0002**:
+  - New tables: accounts, transactions, transaction_revisions.
+  - A composite foreign key means the database itself refuses to link a transaction to another user's account.
+  - Database checks enforce positive amounts, valid kind/direction pairs, transfer and reversal links, and the last-4-digits mask format.
+- **API**:
+  - Accounts: create, list, edit, archive, and delete if never used.
+  - Transactions: create; two-sided transfers; edit with revision history; soft delete; reverse; mark pending as completed or failed.
+  - List with filters, search and pages; CSV export.
+  - Monthly summary in your timezone.
+  - JSON export of everything; email change; delete my account; admin make/remove admin.
+- **Screens**:
+  - Home: this month's income, spending, net cash flow and pending, plus balances and total.
+  - Accounts and Transactions, with a detail panel showing full history and actions.
+  - Settings: change email, download data, delete account.
+  - Admin: role toggle.
+
+### Acceptance criteria
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Accounts with type, currency, opening balance and date; labelled manual/estimated | Pass | `test_create_account_is_manual_and_estimated`, validation tests; clients cannot set `source=connected` |
+| 2 | Income, expense, fee, refund, adjustment with all fields and statuses | Pass | `test_finance.py` |
+| 3 | Transfers saved as two linked entries in one step; never income or spending | Pass | `test_transfer_two_legs_atomic_and_not_pnl`, property test |
+| 4 | Every edit and delete in viewable history; deleted rows excluded but kept | Pass | `test_edit_creates_revision_history`, `test_soft_delete_excluded_but_audited` |
+| 5 | Calculation rules | Pass | `RULES.md` R1–R12 each tested; 100% branch coverage |
+| 6 | Balance = opening + posted on/after opening date, plus a figure including pending | Pass | B1–B3 tests, API tests |
+| 7 | List filters, search, pages ≤100 | Pass | `test_list_filters_search_and_pagination` (incl. literal `%` search) |
+| 8 | Home: month totals in your timezone, balances per account | Pass | `test_summary_defaults_to_current_month`; manual run matched hand calculation |
+| 9 | Email change (password), JSON + CSV export, delete account (password + DELETE), last admin protected | Pass | `test_my_data.py` incl. CSV formula-injection guard |
+| 10 | Tests per rule, property tests, user isolation, CI green | Pass | 158 backend tests; the isolation test covers every finance endpoint; anonymous-401 sweep is now automatic for all routes |
+
+### Bugs found and fixed during the phase
+
+1. The API silently accepted the text `"100"` as an amount. Money fields are now strict integers (test added).
+2. A deprecated SQLAlchemy call broke the link lookups for refunds and reversals. Replaced, and covered by tests.
+3. An unknown transaction type would have been silently ignored by the engine. It now fails loudly (test added).
+
+### Upgrading your running copy
+
+```
+git pull
+docker compose up --build -d
+```
+The new tables are added automatically by `migrate`. Your existing login is kept and nothing needs resetting.
+
+### Known limitations
+
+- Balances are always **estimates**. Reconciling against bank statements arrives with statement import (Phase 3).
+- Only NGN is enabled. Multi-currency is supported by the data model but not switched on.
+- No categories yet (Phase 4). Spending is shown as a total, not by category.
+- Email change has no verification link (D-028). Account deletion is immediate (D-027).
+- Summaries load all transactions for the period. That's fine for a small group, and will be optimised if volumes grow.
+
+### Phase 3 preview (needs your approval)
+
+- Import CSV and Excel bank statements (Nigerian bank formats), with a review screen before anything is saved.
+- Duplicate detection, so re-importing the same file adds nothing.
+- Simulated bank events for testing.
+- Reconciling a computed balance against the statement balance.

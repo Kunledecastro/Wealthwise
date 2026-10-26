@@ -49,3 +49,15 @@ Backend tests run against a real PostgreSQL database `wealthwise_test`, as the r
 | pip-audit / pnpm audit --prod | no known vulnerabilities |
 | Mutation spot-check: CSRF middleware removed | 3 tests fail as expected |
 | Playwright e2e / axe | **Not run** — browser download blocked in build workspace; planned for CI in a later phase |
+
+## Latest results (Phase 2, 26 Oct 2026)
+
+| Check | Result |
+|---|---|
+| pytest (all backend) | 158 passed |
+| Ledger engine branch coverage | **100%** (CI fails below 100%) |
+| Property tests (Hypothesis, 200 cases each) | 5 properties: order independence, transfers neutral, reversal = never happened, balance = opening + signed posted, period split adds up |
+| vitest | 10 passed (incl. exact naira→kobo parsing) |
+| ruff / mypy --strict / eslint / tsc / next build | clean |
+| migrate-check incl. drift | OK |
+| Manual end-to-end via web origin | balances and monthly totals match hand calculation |

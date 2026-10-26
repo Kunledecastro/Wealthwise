@@ -1,6 +1,6 @@
 # Data model (Phase 0 proposal)
 
-Status: **PROPOSED.** Tables are introduced phase by phase; this is the target shape so early tables don't need rework.
+Status: tables from Phases 1–2 are **implemented** (users, preferences, sessions, reset tokens, invites, auth_attempts, audit_events, currencies, accounts, transactions, transaction_revisions). The rest is the target shape for later phases.
 
 ## 1. Conventions
 
@@ -105,7 +105,7 @@ Constraints: `UNIQUE (account_id, external_ref) WHERE external_ref IS NOT NULL`;
    `occurrence_index` = position among identical rows **within the same source file**, so two genuine identical ₦500 POS charges on one day are both kept, while re-importing that file still dedupes.
 3. Near-matches (same amount/direction ±2 days, similar narration, different source) are flagged `possible_duplicate` for user review — never auto-merged.
 
-## 5. Financial calculation rules (summary — authoritative version will live in `app/ledger/RULES.md` with tests)
+## 5. Financial calculation rules (summary — the authoritative, tested version is [`api/app/ledger/RULES.md`](../api/app/ledger/RULES.md))
 
 | Situation | Income/expense totals | Balance |
 |---|---|---|
