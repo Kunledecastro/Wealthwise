@@ -70,7 +70,7 @@ No dependency has a mandatory paid tier. External services with potential cost: 
 
 1. `docker compose up` on a clean Linux/macOS machine starts `db`, `api`, `web`; `GET /api/health` returns 200 with DB connectivity status.
 2. `alembic upgrade head` creates users, preferences, sessions, reset tokens, auth_attempts, audit_events, currencies (NGN seeded); downgrade/upgrade round-trip passes.
-3. A user can register, log in, log out, reset a password (email printed to console in dev), and update currency/timezone/notification preferences. Defaults: NGN, Africa/Lagos.
+3. An admin (created via CLI) can issue single-use invite links; an invited user can register, log in, log out, reset a password (email printed to console in dev), and update currency/timezone/notification preferences. Defaults: NGN, Africa/Lagos.
 4. Passwords stored as Argon2id; session cookie is HttpOnly, SameSite=Lax, and Secure when `COOKIE_SECURE=true`.
 5. 6th failed login within the window for the same email is rejected with 429 and logged.
 6. State-changing requests without a valid CSRF token are rejected with 403.
@@ -86,10 +86,11 @@ No dependency has a mandatory paid tier. External services with potential cost: 
 - PDF statement formats vary heavily between Nigerian banks; Phase 11 needs real (redacted) sample statements from you.
 - Regulatory review (NDPA, CBN Open Banking, SEC) is out of scope for engineering and must happen before public launch.
 
-### Decisions needed from you before Phase 1
+### Decisions from product owner (26 Oct 2026)
 
-1. Approve or amend the architecture decisions D-001 to D-013.
-2. Default product name: SpendWise or Wealthwise (D-014).
-3. Psycopg 3 (LGPL) acceptable, or switch to asyncpg?
-4. Where should the code live long-term — a GitHub repository I can attach, or delivered as files from this workspace?
-5. Intended audience for v1: just you / a small group (self-hosted), or public sign-up? This affects email verification and launch hardening priority.
+- Name: **Wealthwise** (D-014). Driver: **Psycopg 3** (D-010). Code: **GitHub repository** (D-016). Audience: **small group** → invite-only (D-015, proposed).
+
+### Still needed before Phase 1
+
+1. Approval of D-001 to D-013 and D-015.
+2. The GitHub repository (owner/name) to push to.

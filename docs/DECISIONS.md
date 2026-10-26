@@ -13,8 +13,8 @@ Format: ID · status · decision · why · alternatives rejected. "Proposed" ite
 | D-007 | Proposed | Reporting date = `transaction_date` in user's timezone | Matches how users think about "when I spent it" | Posting date |
 | D-008 | Proposed (deferred) | Postgres Row-Level Security as defence-in-depth | Belt-and-braces against authz bugs | — revisit in hardening phase |
 | D-009 | Proposed | Package managers: **uv** (Python), **pnpm** (Node) | Fast, lockfile-based, both available in environment | pip-tools, poetry, npm |
-| D-010 | Proposed | Psycopg 3 as Postgres driver | Mature, async-capable. Licence is **LGPL-3.0**: fine to use unmodified as a library in a self-hosted/SaaS app; flagged for your awareness | asyncpg (Apache-2.0) is the alternative if LGPL is unacceptable to you |
+| D-010 | **Accepted** (26 Oct 2026) | Psycopg 3 as Postgres driver | One driver for both async app code and sync Alembic migrations; SQLAlchemy's recommended Postgres driver. LGPL-3.0 permits use of the unmodified library in a self-hosted app | asyncpg (would need a second sync driver for migrations) |
 | D-011 | Proposed | TypeScript pinned to the latest 5.x/6.x line supported by the chosen Next.js release, not TS 7 | TS 7.0 (native Go compiler) is the current npm `latest`; Next.js/tooling compatibility must be confirmed before adopting | Using `latest` blindly |
 | D-012 | Proposed | Rate limiting implemented in-app on Postgres (`auth_attempts`) | `slowapi` last released 0.1.10 and appears lightly maintained; our needs are narrow | slowapi; Redis-backed limiter |
 | D-013 | Proposed | Ollama optional (compose profile `ai`), default off; deterministic fallback always present | Requirement; workspace and many servers lack the RAM/GPU for a useful model | Mandatory LLM |
-| D-014 | Open question | Product name default: "SpendWise" (brief) vs "Wealthwise" (project name) | Both configurable via `APP_NAME`; need your choice for default branding | — |
+| D-014 | Open question | Product name default: "Wealthwise" (brief) vs "Wealthwise" (project name) | Both configurable via `APP_NAME`; need your choice for default branding | — |

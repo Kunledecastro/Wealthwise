@@ -1,6 +1,8 @@
-# SpendWise (working title)
+# Wealthwise
 
-Personal finance and spending intelligence web app for the Nigerian market (NGN default, Africa/Lagos timezone), built so that transaction accuracy comes before AI. Product name is configurable via `APP_NAME`.
+*Spend wisely. Grow steadily.*
+
+Personal finance and spending intelligence web app for the Nigerian market (NGN default, Africa/Lagos timezone), built so that transaction accuracy comes before AI. v1 is for a small, invite-only group on a self-hosted server. Product name is configurable via `APP_NAME`.
 
 ## Status
 
