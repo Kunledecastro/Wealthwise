@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 import { AppShell } from "@/components/app-shell";
+import { DataCard, DeleteAccountCard, EmailCard } from "@/components/my-data-cards";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,8 +21,11 @@ export default function SettingsPage() {
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold">Settings</h1>
         <PreferencesCard />
+        <EmailCard />
         <PasswordCard />
         <SessionsCard />
+        <DataCard />
+        <DeleteAccountCard />
       </div>
     </AppShell>
   );

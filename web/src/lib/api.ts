@@ -70,6 +70,7 @@ export async function api<T>(
     throw new ApiError(0, "Cannot reach the server. Check your connection and try again.");
   }
   if (!res.ok) throw await parseError(res);
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -112,4 +113,105 @@ export type AdminUser = {
   status: "active" | "disabled";
   created_at: string;
   last_login_at: string | null;
+};
+
+// ---- Phase 2: finance ----
+
+export type AccountType = "bank" | "wallet" | "cash" | "savings" | "card" | "loan";
+export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
+  bank: "Bank account",
+  wallet: "Wallet",
+  cash: "Cash",
+  savings: "Savings",
+  card: "Card",
+  loan: "Loan",
+};
+
+export type Balance = {
+  posted_minor: number;
+  pending_in: number;
+  pending_out: number;
+  available_incl_pending: number;
+  status: "estimated" | "reconciled" | "stale";
+  as_of: string;
+};
+
+export type Account = {
+  id: string;
+  type: AccountType;
+  display_name: string;
+  institution_name: string | null;
+  mask: string | null;
+  currency: string;
+  opening_balance_minor: number;
+  opening_balance_date: string;
+  source: "manual" | "imported" | "simulated" | "connected";
+  is_archived: boolean;
+  created_at: string;
+  transaction_count: number;
+  balance: Balance;
+};
+
+export type TxnKind = "income" | "expense" | "fee" | "refund" | "transfer" | "reversal" | "adjustment";
+export type TxnStatus = "pending" | "posted" | "failed" | "reversed";
+export const KIND_LABEL: Record<TxnKind, string> = {
+  income: "Income",
+  expense: "Expense",
+  fee: "Bank fee",
+  refund: "Refund",
+  transfer: "Transfer",
+  reversal: "Reversal",
+  adjustment: "Adjustment",
+};
+
+export type Transaction = {
+  id: string;
+  account_id: string;
+  account_name: string;
+  kind: TxnKind;
+  direction: "debit" | "credit";
+  amount_minor: number;
+  currency: string;
+  status: TxnStatus;
+  transaction_date: string;
+  posting_date: string | null;
+  merchant: string | null;
+  narration: string | null;
+  notes: string | null;
+  source: string;
+  transfer_group_id: string | null;
+  counterpart_account_id: string | null;
+  counterpart_account_name: string | null;
+  reverses_id: string | null;
+  reversed_by_id: string | null;
+  refund_of_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Revision = { action: string; changes: Record<string, [unknown, unknown]>; reason: string | null; created_at: string };
+export type TransactionDetail = Transaction & { revisions: Revision[] };
+export type TransactionPage = { items: Transaction[]; total: number; page: number; page_size: number };
+
+export type CurrencySummary = {
+  currency: string;
+  income: number;
+  gross_spending: number;
+  fees: number;
+  refunds: number;
+  net_spending: number;
+  net_cash_flow: number;
+  pending_in: number;
+  pending_out: number;
+  transaction_count: number;
+};
+
+export type Summary = {
+  date_from: string;
+  date_to: string;
+  timezone: string;
+  summaries: CurrencySummary[];
+  accounts: Account[];
+  balance_totals: Record<string, number>;
+  balances_are_estimated: boolean;
 };

@@ -38,6 +38,8 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
 
   const links = [
     { href: "/", label: "Home" },
+    { href: "/transactions", label: "Transactions" },
+    { href: "/accounts", label: "Accounts" },
     { href: "/settings", label: "Settings" },
     ...(me.role === "admin" ? [{ href: "/admin", label: "Admin" }] : []),
   ];
@@ -55,18 +57,18 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <Link href="/" className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
             <Brand />
           </Link>
-          <nav aria-label="Main" className="ml-auto flex items-center gap-1">
+          <nav aria-label="Main" className="-mx-1 order-last flex w-full items-center gap-1 overflow-x-auto sm:order-none sm:mx-0 sm:ml-auto sm:w-auto">
             {links.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
                 aria-current={pathname === l.href ? "page" : undefined}
                 className={cn(
-                  "rounded-md px-3 py-2 text-sm hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                  "shrink-0 rounded-md px-3 py-2 text-sm hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                   pathname === l.href ? "font-semibold text-[var(--fg)]" : "text-[var(--fg-subtle)]",
                 )}
               >
@@ -76,7 +78,7 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
             <button
               onClick={signOut}
               disabled={signingOut}
-              className="ml-1 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm text-[var(--fg-subtle)] hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="ml-auto shrink-0 inline-flex items-center gap-1.5 sm:ml-1 rounded-md px-3 py-2 text-sm text-[var(--fg-subtle)] hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <LogOut className="h-4 w-4" aria-hidden />
               <span className="hidden sm:inline">Sign out</span>

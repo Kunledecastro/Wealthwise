@@ -100,6 +100,17 @@ function AdminContent() {
                 {u.id !== me.id && (
                   <Button size="sm" variant="ghost" className="ml-auto"
                     onClick={async () => {
+                      const next = u.role === "admin" ? "member" : "admin";
+                      if (!window.confirm(next === "admin" ? `Make ${u.display_name} an admin? They will be able to invite and disable people.` : `Remove admin rights from ${u.display_name}?`)) return;
+                      await api(`/api/admin/users/${u.id}/role`, { method: "POST", body: { role: next } });
+                      load();
+                    }}>
+                    {u.role === "admin" ? "Remove admin" : "Make admin"}
+                  </Button>
+                )}
+                {u.id !== me.id && (
+                  <Button size="sm" variant="ghost"
+                    onClick={async () => {
                       const next = u.status === "active" ? "disabled" : "active";
                       if (next === "disabled" && !window.confirm(`Disable ${u.display_name}? They will be signed out immediately.`)) return;
                       await api(`/api/admin/users/${u.id}/status`, { method: "POST", body: { status: next } });

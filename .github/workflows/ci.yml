@@ -48,6 +48,9 @@ jobs:
       - name: Tests
         working-directory: api
         run: uv run pytest
+      - name: Ledger engine must stay at 100% branch coverage
+        working-directory: api
+        run: uv run pytest tests/test_ledger.py --cov=app/ledger --cov-branch --cov-fail-under=100 -q
       - name: Dependency audit
         working-directory: api
         run: uv run pip-audit

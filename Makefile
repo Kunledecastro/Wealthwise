@@ -30,6 +30,7 @@ dev-web:
 test: test-api test-web
 test-api:
 	cd api && uv run pytest
+	cd api && uv run pytest tests/test_ledger.py --cov=app/ledger --cov-branch --cov-fail-under=100 -q
 test-web:
 	cd web && pnpm test
 
