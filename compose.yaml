@@ -29,7 +29,7 @@ x-api-env: &api-env
 
 services:
   db:
-    image: postgres:16-alpine
+    build: ./deploy/postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-wealthwise}
@@ -39,12 +39,14 @@ services:
       WW_APP_PASSWORD: ${WW_APP_PASSWORD:?set WW_APP_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # -h 127.0.0.1: during first-time setup Postgres only listens on a local socket,
+      # so checking TCP avoids reporting "ready" before initialisation has finished.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 30s
     # Not published to the host: only reachable on the private compose network.
 
   migrate:
@@ -54,7 +56,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    restart: "no"
+    restart: on-failure:3
 
   api:
     build: ./api
