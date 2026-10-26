@@ -63,3 +63,4 @@ Set `APP_ENV=production`, `COOKIE_SECURE=true`, `APP_BASE_URL=https://your.domai
 | [TESTING](docs/TESTING.md) | Test layers, how to run, latest results |
 | [DECISIONS](docs/DECISIONS.md) | Decision log |
 | [PHASE_STATUS](docs/PHASE_STATUS.md) | Roadmap and per-phase reports |
+| [MANUAL_TESTS](docs/MANUAL_TESTS.md) | Step-by-step manual checks for the current phase |
