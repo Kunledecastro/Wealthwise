@@ -3,7 +3,7 @@
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Discovery, architecture, data model, security design, dependencies, acceptance criteria | **Approved** (26 Oct 2026) |
-| 1 | Repo scaffold, Docker Compose, CI, FastAPI + Next.js skeleton, Postgres + Alembic, **authentication & user preferences** | **Complete — awaiting review** (26 Oct 2026) |
+| 1 | Repo scaffold, Docker Compose, CI, FastAPI + Next.js skeleton, Postgres + Alembic, **authentication & user preferences** | **Complete — all manual checks passed** (26 Oct 2026) |
 | 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export and account deletion | Not started |
 | 3 | Ingestion framework + CSV/XLSX adapter, dedupe, import review screen, simulated bank events | Not started |
 | 4 | Categories, rules engine, review queue, learn-from-correction | Not started |
@@ -79,6 +79,10 @@ No dependency has a mandatory paid tier. External services with potential cost: 
 9. Responsive login/register/settings pages with loading, error and success states; keyboard navigable.
 10. `make lint`, `make test`, `make migrate-check` pass, with output recorded here.
 
+### Manual test results (product owner, Windows, 26 Oct 2026)
+
+M1–M10: **all pass.**
+
 ### Known limitations / risks
 
 - Docker daemon is not available in this workspace, so Compose cannot be run here. Phase 1 can be built and unit/integration-tested here (local Postgres), but **you must confirm `docker compose up` on your machine**.
@@ -109,7 +113,7 @@ All proposed decisions approved 26 Oct 2026. Repository: `Kunledecastro/Wealthwi
 
 | # | Criterion | Result | Evidence |
 |---|---|---|---|
-| 1 | `docker compose up` starts db, api, web; health returns 200 | **Pass (CI, Linux)** | GitHub Actions builds the images, **starts the full stack** with a simulated Windows (CRLF) checkout, gets 200 from `/api/health` and creates an admin via the CLI. Still to confirm on your Windows machine (M1). |
+| 1 | `docker compose up` starts db, api, web; health returns 200 | Pass | CI on Linux (full stack, simulated Windows checkout) **and** the product owner's Windows PC (M1) |
 | 2 | Migration creates tables, NGN seeded, round-trip passes | Pass | `make migrate-check`: upgrade → downgrade → upgrade → `alembic check` (no drift) |
 | 3 | Invite, register, login, logout, reset (console email), preferences with NGN / Africa/Lagos defaults | Pass | Automated tests, plus a manual walk-through over HTTP through the web origin |
 | 4 | Argon2id hashes; cookie HttpOnly, SameSite=Lax, Secure when configured | Pass | `test_password_stored_as_argon2id`, `test_login_success_and_cookie_flags`, `test_secure_cookie_when_configured` |
@@ -117,7 +121,7 @@ All proposed decisions approved 26 Oct 2026. Repository: `Kunledecastro/Wealthwi
 | 6 | Missing/invalid CSRF → 403 | Pass | 3 CSRF tests; removing the middleware makes them fail (checked) |
 | 7 | User A cannot read/modify User B's data | Pass | Isolation test, anonymous-401 sweep, and a guard test that fails if a new route isn't classified |
 | 8 | Audit rows written; no credentials/emails in logs | Pass | `test_audit_events_written`, `test_logs_do_not_contain_credentials`; manual log grep found 0 matches |
-| 9 | Responsive pages with loading/error/success states, keyboard navigable | **Built; not visually verified** | Production build succeeds. A browser could not be installed here (download blocked), so layout and keyboard use need your manual check (below). |
+| 9 | Responsive pages with loading/error/success states, keyboard navigable | Pass | Product owner manual checks M9 (mobile) and M10 (keyboard) |
 | 10 | `make lint`, `make test`, `make migrate-check` pass | Pass | ruff, ruff format, mypy (strict), eslint and tsc: 0 issues. pytest: **60 passed**. vitest: **6 passed**. pip-audit and pnpm audit: no known vulnerabilities. |
 
 ### Bugs found and fixed during the phase
@@ -147,10 +151,12 @@ See README → "Run it with Docker". Short version: `cp .env.example .env`, edit
 | M9 | Phone (or browser dev tools at 375px width): all pages | No horizontal scrolling; buttons easy to tap |
 | M10 | Keyboard only (Tab / Shift+Tab / Enter) through Sign in and Settings | Every control reachable, visible focus ring |
 
+### Manual test results (product owner, Windows, 26 Oct 2026)
+
+M1–M10: **all pass.**
+
 ### Known limitations / risks
 
-- The full stack is verified in CI on Linux; Windows confirmation is pending (M1).
-- Visual and keyboard testing not done here (M9, M10).
 - CSP still allows inline scripts (D-019); this moves to nonces in hardening.
 - Email in production needs an SMTP provider. Without one, use the CLI `reset-link` command.
 - No email verification: acceptable for invite-only use, where invites can be bound to an email.
@@ -165,4 +171,4 @@ Root: `compose.yaml`, `.env.example`, `Makefile`, `deploy/` (Postgres init, Cadd
 
 ### Phase 2 preview (needs your approval)
 
-Financial accounts (bank, wallet, cash, savings) with opening balances, and transactions (manual entry, edit history, statuses, filters). The **ledger engine** handles transfers, refunds, reversals and pending items, with exhaustive unit tests. Phase 2 also adds full data export and account deletion.
+Financial accounts (bank, wallet, cash, savings) with opening balances, changing your sign-in email from Settings, and transactions (manual entry, edit history, statuses, filters). The **ledger engine** handles transfers, refunds, reversals and pending items, with exhaustive unit tests. Phase 2 also adds full data export and account deletion.
