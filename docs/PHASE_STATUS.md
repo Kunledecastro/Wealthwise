@@ -109,7 +109,7 @@ All proposed decisions approved 26 Oct 2026. Repository: `Kunledecastro/Wealthwi
 
 | # | Criterion | Result | Evidence |
 |---|---|---|---|
-| 1 | `docker compose up` starts db, api, web; health returns 200 | **Partly verified** | Images **build successfully in GitHub Actions**, and the compose file validates. Services ran successfully outside Docker with the same commands. The full stack was **not started in Docker** (base images can't be pulled in this workspace): confirm with M1. |
+| 1 | `docker compose up` starts db, api, web; health returns 200 | **Pass (CI, Linux)** | GitHub Actions builds the images, **starts the full stack** with a simulated Windows (CRLF) checkout, gets 200 from `/api/health` and creates an admin via the CLI. Still to confirm on your Windows machine (M1). |
 | 2 | Migration creates tables, NGN seeded, round-trip passes | Pass | `make migrate-check`: upgrade → downgrade → upgrade → `alembic check` (no drift) |
 | 3 | Invite, register, login, logout, reset (console email), preferences with NGN / Africa/Lagos defaults | Pass | Automated tests, plus a manual walk-through over HTTP through the web origin |
 | 4 | Argon2id hashes; cookie HttpOnly, SameSite=Lax, Secure when configured | Pass | `test_password_stored_as_argon2id`, `test_login_success_and_cookie_flags`, `test_secure_cookie_when_configured` |
@@ -122,7 +122,8 @@ All proposed decisions approved 26 Oct 2026. Repository: `Kunledecastro/Wealthwi
 
 ### Bugs found and fixed during the phase
 
-3. The first CI image build failed because corepack picked an unpinned pnpm version inside Docker. pnpm is now pinned via `packageManager`, and CI reports build errors as annotations.
+3. First-run database setup failed on Windows: Git converted the init script to CRLF line endings, and the DB health check reported "ready" during first-time initialisation, so `migrate` connected too early. Fixed with a small DB image that strips CRLF, a TCP health check, `.gitattributes`, and a CI job that now starts the whole stack.
+4. The first CI image build failed because corepack picked an unpinned pnpm version inside Docker. pnpm is now pinned via `packageManager`, and CI reports build errors as annotations.
 
 1. A non-IP client address crashed requests when stored in the `inet` column. IPs are now validated first.
 2. The CLI accepted emails that login rejects (e.g. `admin@x.local`), which could create an admin who can never sign in. Account creation now uses the same email validation; a regression test was added.
@@ -148,7 +149,7 @@ See README → "Run it with Docker". Short version: `cp .env.example .env`, edit
 
 ### Known limitations / risks
 
-- Images build in CI, but the running compose stack is unverified (M1 covers this).
+- The full stack is verified in CI on Linux; Windows confirmation is pending (M1).
 - Visual and keyboard testing not done here (M9, M10).
 - CSP still allows inline scripts (D-019); this moves to nonces in hardening.
 - Email in production needs an SMTP provider. Without one, use the CLI `reset-link` command.
