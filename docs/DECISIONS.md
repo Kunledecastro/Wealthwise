@@ -17,4 +17,6 @@ Format: ID · status · decision · why · alternatives rejected. "Proposed" ite
 | D-011 | Proposed | TypeScript pinned to the latest 5.x/6.x line supported by the chosen Next.js release, not TS 7 | TS 7.0 (native Go compiler) is the current npm `latest`; Next.js/tooling compatibility must be confirmed before adopting | Using `latest` blindly |
 | D-012 | Proposed | Rate limiting implemented in-app on Postgres (`auth_attempts`) | `slowapi` last released 0.1.10 and appears lightly maintained; our needs are narrow | slowapi; Redis-backed limiter |
 | D-013 | Proposed | Ollama optional (compose profile `ai`), default off; deterministic fallback always present | Requirement; workspace and many servers lack the RAM/GPU for a useful model | Mandatory LLM |
-| D-014 | Open question | Product name default: "Wealthwise" (brief) vs "Wealthwise" (project name) | Both configurable via `APP_NAME`; need your choice for default branding | — |
+| D-014 | **Accepted** (26 Oct 2026) | Default product name **Wealthwise** (still configurable via `APP_NAME`) | Product owner decision | SpendWise |
+| D-015 | Proposed | v1 audience is a small group: **invite-only registration** (admin creates single-use invite links); first user created via CLI becomes admin; public sign-up disabled by config | Product owner: small group. Removes open-registration abuse and lowers launch hardening burden | Open public sign-up with email verification |
+| D-016 | **Accepted** (26 Oct 2026) | Code lives in a GitHub repository | Product owner decision | Files delivered from workspace |
