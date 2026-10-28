@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("--note")
     r = sub.add_parser("reset-link")
     r.add_argument("--email", required=True)
+    sub.add_parser("categorise-pending", help="Seed categories and categorise new data")
     args = p.parse_args(argv)
 
     db = get_sessionmaker()()
@@ -70,6 +71,16 @@ def main(argv: list[str] | None = None) -> int:
             db.commit()
             print("Password reset link (single use):")
             print(reset_url(token))
+        elif args.cmd == "categorise-pending":
+            from app.categorise.service import recategorise, seed_defaults
+
+            total = 0
+            for uid in db.scalars(select(User.id)):
+                seed_defaults(db, uid)
+                db.flush()
+                total += recategorise(db, uid, only_sources=("none",))
+            db.commit()
+            print(f"Categorised {total} transaction(s).")
     except HTTPException as exc:
         db.rollback()
         sys.exit(f"Error: {exc.detail}")

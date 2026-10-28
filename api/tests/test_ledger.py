@@ -343,3 +343,81 @@ def test_b5_reconcile_matches_and_breaks_after_old_edit():
         statement_minor=1200,
     )
     assert not r2.matches and r2.difference_minor == 100
+
+
+# ---------- R13-R14 by category ----------
+
+
+def ec(kind, direction, amount, cat, status="posted", d=D):
+    return Entry(kind, direction, amount, "NGN", status, d, 1, False, cat)
+
+
+def test_r13_by_category_and_uncategorised_group():
+    from app.ledger.engine import by_category
+
+    out = by_category(
+        [
+            ec("expense", "debit", 1000, 1),
+            ec("fee", "debit", 50, 2),
+            ec("expense", "debit", 7, None),
+            ec("income", "credit", 900, 3),
+            ec("transfer", "debit", 5000, None),
+            ec("expense", "debit", 99, 1, status="pending"),
+            ec("adjustment", "credit", 1, None),
+        ]
+    )
+    assert out[("NGN", 1)].net_spending == 1000
+    assert out[("NGN", 2)].gross_spending == 50
+    assert out[("NGN", None)].gross_spending == 7  # transfer/adjustment not counted
+    assert out[("NGN", 3)].income == 900
+
+
+def test_r14_refund_reduces_its_own_category():
+    from app.ledger.engine import by_category
+
+    out = by_category(
+        [
+            ec("expense", "debit", 2000, 1),
+            ec("refund", "credit", 500, 1),
+            ec("expense", "debit", 300, 2),
+        ]
+    )
+    assert out[("NGN", 1)].net_spending == 1500
+    assert out[("NGN", 2)].net_spending == 300
+
+
+cats = st.sampled_from([None, 1, 2, 3])
+
+
+@st.composite
+def cat_entries(draw):
+    x = draw(entries())
+    return Entry(
+        x.kind,
+        x.direction,
+        x.amount_minor,
+        "NGN",
+        x.status,
+        x.transaction_date,
+        1,
+        False,
+        draw(cats),
+    )
+
+
+@settings(max_examples=200)
+@given(st.lists(cat_entries(), max_size=40))
+def test_prop_categories_add_up_to_totals(es):
+    from app.ledger.engine import by_category
+
+    s = summarize(es).get("NGN")
+    groups = by_category(es).values()
+    assert sum(g.net_spending for g in groups) == (s.net_spending if s else 0)
+    assert sum(g.income for g in groups) == (s.income if s else 0)
+
+
+def test_by_category_unknown_kind_fails_loudly():
+    from app.ledger.engine import by_category
+
+    with pytest.raises(ValueError):
+        by_category([ec("bonus", "credit", 1, None)])

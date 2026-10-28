@@ -25,6 +25,7 @@ class Entry:
     transaction_date: date
     account_id: int = 0
     deleted: bool = False
+    category_id: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.amount_minor, int) or isinstance(self.amount_minor, bool):
@@ -204,3 +205,42 @@ def reconcile(
         as_of=as_of,
     ).posted_minor
     return Reconciliation(as_of=as_of, statement_minor=statement_minor, computed_minor=computed)
+
+
+@dataclass(slots=True)
+class CategoryTotal:
+    currency: str
+    category_id: int | None  # None = uncategorised
+    gross_spending: int = 0
+    refunds: int = 0
+    income: int = 0
+    transaction_count: int = 0
+
+    @property
+    def net_spending(self) -> int:
+        return self.gross_spending - self.refunds  # R14
+
+
+def by_category(
+    entries: Iterable[Entry], date_from: date | None = None, date_to: date | None = None
+) -> dict[tuple[str, int | None], CategoryTotal]:
+    """R13-R14: posted income and spending per category for a period. Applies exactly the
+    same inclusion rules as summarize(), so the categories always add up to the totals."""
+    out: dict[tuple[str, int | None], CategoryTotal] = {}
+    for e in entries:
+        if not is_live(e) or not in_period(e, date_from, date_to) or e.status != "posted":
+            continue
+        if e.kind in NON_PNL_KINDS:
+            continue
+        key = (e.currency, e.category_id)
+        t = out.setdefault(key, CategoryTotal(currency=e.currency, category_id=e.category_id))
+        t.transaction_count += 1
+        if e.kind in INCOME_KINDS:
+            t.income += e.amount_minor
+        elif e.kind in SPEND_KINDS:
+            t.gross_spending += e.amount_minor
+        elif e.kind in REFUND_KINDS:
+            t.refunds += e.amount_minor
+        else:
+            raise ValueError(f"unknown transaction kind {e.kind!r}")
+    return out

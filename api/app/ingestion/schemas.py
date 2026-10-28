@@ -36,6 +36,8 @@ class RowUpdate(Strict):
     id: uuid.UUID
     include: bool | None = None
     kind: str | None = Field(default=None, max_length=16)
+    # Explicit null = leave uncategorised on purpose; omit to keep the suggestion.
+    category_id: uuid.UUID | None = None
 
 
 class RowUpdatesIn(Strict):
@@ -69,6 +71,12 @@ class ImportRowOut(BaseModel):
     kind: str | None
     allowed_kinds: list[str]
     transaction_id: uuid.UUID | None = None
+    merchant_normalised: str | None = None
+    category_id: uuid.UUID | None = None
+    category_name: str | None = None
+    category_source: str = "none"
+    category_confidence: int = 0
+    category_reason: str | None = None
 
 
 class ImportBatchOut(BaseModel):

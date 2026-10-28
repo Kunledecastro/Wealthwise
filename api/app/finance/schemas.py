@@ -107,6 +107,7 @@ class TransactionIn(_TxnCommon):
     direction: Direction | None = None  # only for adjustments
     merchant: str | None = Field(default=None, max_length=120)
     refund_of_id: uuid.UUID | None = None
+    category_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _direction(self) -> "TransactionIn":
@@ -142,6 +143,8 @@ class TransactionPatch(Strict):
     narration: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=1000)
     reason: str | None = Field(default=None, max_length=200)
+    # Explicit null means "leave uncategorised on purpose"; omit it to keep automatic.
+    category_id: uuid.UUID | None = None
 
 
 class ReverseIn(Strict):
@@ -174,6 +177,14 @@ class TransactionOut(BaseModel):
     reverses_id: uuid.UUID | None = None
     reversed_by_id: uuid.UUID | None = None
     refund_of_id: uuid.UUID | None = None
+    merchant_normalised: str | None = None
+    category_id: uuid.UUID | None = None
+    category_name: str | None = None
+    category_color: str | None = None
+    category_source: str = "none"
+    category_confidence: int = 0
+    category_reason: str | None = None
+    needs_review: bool = False
     created_at: datetime
     updated_at: datetime
 

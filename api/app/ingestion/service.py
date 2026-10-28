@@ -14,6 +14,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.categorise import service as cats
 from app.db.models import (
     Account,
     ImportBatch,
@@ -249,7 +250,34 @@ def stage(db: Session, batch: ImportBatch, account: Account) -> None:
         target = getattr(row, "_reverses_row", None)
         if target is not None:
             row.reversal_of_row_id = target.id
+    suggest_categories(db, account, staged)
     batch.counts = _count(staged, res.skipped)
+
+
+def suggest_categories(db: Session, account: Account, rows: list[ImportRow]) -> None:
+    """Category suggestions for the review screen (same engine as everywhere else)."""
+    ctx = cats.load_context(db, account.user_id)
+    by_id = {r.id: r for r in rows}
+    linked_txn_cats = dict(
+        db.execute(
+            select(Transaction.id, Transaction.category_id).where(
+                Transaction.id.in_(
+                    [r.reversal_of_transaction_id for r in rows if r.reversal_of_transaction_id]
+                )
+            )
+        ).all()
+    )
+    ordered = sorted(rows, key=lambda r: r.reversal_of_row_id is not None)
+    for r in ordered:
+        if r.outcome in ("error", "duplicate"):
+            continue
+        linked = None
+        if r.kind == "reversal":
+            if r.reversal_of_row_id and r.reversal_of_row_id in by_id:
+                linked = by_id[r.reversal_of_row_id].category_id
+            elif r.reversal_of_transaction_id:
+                linked = linked_txn_cats.get(r.reversal_of_transaction_id)
+        cats.apply_row(ctx, r, account.id, linked)
 
 
 def _possible_duplicate(
@@ -435,6 +463,7 @@ def commit(
 
     source = batch.adapter
     acct_ids = {account.id: account.public_id}
+    ctx = cats.load_context(db, account.user_id)
     created: dict[int, Transaction] = {}
     side_effects: list[dict[str, Any]] = []
     transfers = reversals = 0
@@ -478,6 +507,8 @@ def commit(
                 other_before = snapshot(other, {})
                 other.kind = "transfer"
                 other.transfer_group_id = group
+                other.category_source = "none"  # a transfer's category is fixed
+                cats.apply(ctx, other)
                 add_revision(
                     db,
                     other,
@@ -509,12 +540,40 @@ def commit(
                 reversals += 1
         if t.kind not in ALLOWED_KINDS[r.direction or "debit"] | {"transfer", "reversal"}:
             t.kind = NATURAL_KIND[r.direction or "debit"]
+        user_cat = r.category_id if r.category_source == "user" else None
+        if user_cat is not None and t.category_source != "user":
+            cat = ctx.info(user_cat)
+            if cat is None or cat.archived or not _fits_kind(cat.kind, t.kind):
+                user_cat = None
+        if (
+            r.category_source == "user"
+            and r.category_id is None
+            and t.kind not in ("transfer", "reversal", "adjustment")
+        ):
+            cats.apply(ctx, t, user_uncategorised=True)
+        else:
+            linked = None
+            if t.reverses_transaction_id:
+                orig_t = next(
+                    (x for x in created.values() if x.id == t.reverses_transaction_id), None
+                )
+                linked = (
+                    orig_t.category_id
+                    if orig_t is not None
+                    else db.scalar(
+                        select(Transaction.category_id).where(
+                            Transaction.id == t.reverses_transaction_id
+                        )
+                    )
+                )
+            cats.apply(ctx, t, user_category_id=user_cat, linked_category_id=linked)
         db.add(t)
         db.flush()
         created[r.id] = t
         r.transaction_id = t.id
         add_revision(db, t, "create", snapshot(t, acct_ids), reason)
 
+    cats.flush_hits(db, ctx)
     opening_set = False
     if set_opening_from_statement:
         account.opening_balance_minor = batch.statement_opening_balance_minor  # type: ignore[assignment]
@@ -591,6 +650,12 @@ def commit(
     return CommitResult(len(created), transfers, reversals, opening_set, rec_out)
 
 
+def _fits_kind(category_kind: str, txn_kind: str) -> bool:
+    if txn_kind in ("expense", "fee", "refund"):
+        return category_kind == "expense"
+    return category_kind == "income" if txn_kind == "income" else False
+
+
 def _newest_first(db: Session, batch: ImportBatch) -> bool:
     first = db.scalar(
         select(ImportRow.transaction_date)
@@ -636,6 +701,7 @@ def undo(db: Session, batch: ImportBatch) -> int:
     )
     mine_ids = {t.id for t in mine}
     reason = f"Import of {batch.filename} undone"[:200]
+    ctx = cats.load_context(db, batch.user_id)
     for t in mine:
         t.deleted_at = now
         # Free the identity so the same file can be imported again later.
@@ -650,6 +716,8 @@ def undo(db: Session, batch: ImportBatch) -> int:
         if fx["type"] == "transfer_link" and other.kind == "transfer":
             add_revision(db, other, "update", {"kind": ["transfer", fx["prev_kind"]]}, reason)
             other.kind, other.transfer_group_id = fx["prev_kind"], None
+            other.category_source = "none"
+            cats.apply(ctx, other)
         elif fx["type"] == "reversed" and other.status == "reversed":
             add_revision(db, other, "update", {"status": ["reversed", "posted"]}, reason)
             other.status = "posted"
@@ -676,6 +744,8 @@ def undo(db: Session, batch: ImportBatch) -> int:
                 "Its matching transfer was removed by an undone import",
             )
             t.kind, t.transfer_group_id = natural, None
+            t.category_source = "none"
+            cats.apply(ctx, t)
     batch.status = "undone"
     batch.finished_at = now
     return len(mine)

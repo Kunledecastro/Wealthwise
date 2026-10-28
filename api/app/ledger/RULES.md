@@ -22,6 +22,8 @@ Each rule below has at least one test in `tests/test_ledger.py`.
 | R9 | **Transfers** between own accounts are never income or spending, but move each account's balance. |
 | R10 | **Adjustments** (manual corrections) are never income or spending, but move the balance. |
 | R11 | **Net cash flow** = income − net spending. |
+| R13 | **Spending by category** uses exactly the same inclusion rules as R1–R12; uncategorised transactions form their own group, so the categories always add up to the totals. |
+| R14 | A **refund** reduces spending in **its own** category (which is the purchase's category when the refund is linked to it). Categories are labels only: they never change whether something counts as income or spending. |
 | R12 | Reporting periods use `transaction_date` (the date it happened, in the user's timezone), inclusive at both ends. |
 
 ## Balances

@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record as audit
 from app.auth.sessions import CurrentAuth, client_ip, require_auth
-from app.db.models import Account, Transaction, TransactionRevision, utcnow
+from app.categorise import service as cats
+from app.db.models import Account, Category, Transaction, TransactionRevision, utcnow
 from app.db.session import get_db
 from app.finance.schemas import (
     DeleteIn,
@@ -95,6 +96,8 @@ def _filtered(
     q: str | None,
     min_amount: int | None,
     max_amount: int | None,
+    category: str | None = None,
+    needs_review: bool | None = None,
 ) -> Select[Transaction]:
     stmt = select(Transaction).where(
         Transaction.user_id == auth.user.id, Transaction.deleted_at.is_(None)
@@ -113,6 +116,18 @@ def _filtered(
         stmt = stmt.where(Transaction.amount_minor >= min_amount)
     if max_amount is not None:
         stmt = stmt.where(Transaction.amount_minor <= max_amount)
+    if category == "none":
+        stmt = stmt.where(Transaction.category_id.is_(None))
+    elif category:
+        try:
+            cat_uuid = uuid.UUID(category)
+        except ValueError as exc:
+            raise unprocessable("Unknown category.") from exc
+        stmt = stmt.where(
+            Transaction.category_id == cats.get_category(db, auth.user.id, cat_uuid).id
+        )
+    if needs_review is not None:
+        stmt = stmt.where(Transaction.needs_review.is_(needs_review))
     if q:
         term = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         stmt = stmt.where(
@@ -145,13 +160,26 @@ def list_transactions(
     q: Annotated[str | None, Query(max_length=100)] = None,
     min_amount: Annotated[int | None, Query(ge=0)] = None,
     max_amount: Annotated[int | None, Query(ge=0)] = None,
+    category: Annotated[str | None, Query(max_length=40)] = None,
+    needs_review: bool | None = None,
     page: Annotated[int, Query(ge=1, le=10_000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 50,
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> TransactionPage:
     stmt = _filtered(
-        auth, db, account_id, kind, status_, date_from, date_to, q, min_amount, max_amount
+        auth,
+        db,
+        account_id,
+        kind,
+        status_,
+        date_from,
+        date_to,
+        q,
+        min_amount,
+        max_amount,
+        category,
+        needs_review,
     )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
@@ -182,10 +210,25 @@ def export_csv(
     date_from: date | None = None,
     date_to: date | None = None,
     q: Annotated[str | None, Query(max_length=100)] = None,
+    category: Annotated[str | None, Query(max_length=40)] = None,
+    needs_review: bool | None = None,
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> StreamingResponse:
-    stmt = _filtered(auth, db, account_id, kind, status_, date_from, date_to, q, None, None)
+    stmt = _filtered(
+        auth,
+        db,
+        account_id,
+        kind,
+        status_,
+        date_from,
+        date_to,
+        q,
+        None,
+        None,
+        category,
+        needs_review,
+    )
     rows = db.scalars(stmt.order_by(Transaction.transaction_date, Transaction.id)).all()
     outs = txn_outs(db, auth.user.id, rows)
     buf = io.StringIO()
@@ -203,6 +246,7 @@ def export_csv(
             "currency",
             "status",
             "merchant",
+            "category",
             "description",
             "notes",
             "transfer_counterpart",
@@ -224,6 +268,7 @@ def export_csv(
                 t.currency,
                 t.status,
                 _csv_safe(t.merchant),
+                _csv_safe(t.category_name),
                 _csv_safe(t.narration),
                 _csv_safe(t.notes),
                 _csv_safe(t.counterpart_account_name),
@@ -260,6 +305,7 @@ def create_transaction(
     _check_dates(auth, body.transaction_date)
     acct = _usable_account(db, auth, body.account_id)
     refund_of_id = None
+    orig: Transaction | None = None
     if body.refund_of_id is not None:
         orig = get_txn(db, auth.user.id, body.refund_of_id)
         if orig.kind not in ("expense", "fee"):
@@ -287,6 +333,15 @@ def create_transaction(
         refund_of_transaction_id=refund_of_id,
     )
     _settle_posting_date(t)
+    ctx = cats.load_context(db, auth.user.id)
+    chosen = cats.choose(db, auth.user.id, body.category_id, t.kind) if body.category_id else None
+    cats.apply(
+        ctx,
+        t,
+        user_category_id=chosen.id if chosen else None,
+        linked_category_id=orig.category_id if orig is not None else None,
+    )
+    cats.flush_hits(db, ctx)
     db.add(t)
     db.flush()
     add_revision(db, t, "create", snapshot(t, {acct.id: acct.public_id}))
@@ -319,6 +374,7 @@ def create_transfer(
         raise unprocessable("Transfers between different currencies are not supported yet.")
     group = uuid.uuid4()
     legs = []
+    ctx = cats.load_context(db, auth.user.id)
     for acct, direction in ((src, "debit"), (dst, "credit")):
         t = Transaction(
             user_id=auth.user.id,
@@ -336,6 +392,7 @@ def create_transfer(
             transfer_group_id=group,
         )
         _settle_posting_date(t)
+        cats.apply(ctx, t)
         db.add(t)
         legs.append(t)
     db.flush()
@@ -399,6 +456,8 @@ def update_transaction(
     t = get_txn(db, auth.user.id, txn_id)
     raw = body.model_dump(exclude_unset=True)
     reason = blank_to_none(raw.pop("reason", None))
+    category_set = "category_id" in raw
+    category_choice = raw.pop("category_id", None)
     for k in ("merchant", "narration", "notes"):
         if k in raw:
             raw[k] = blank_to_none(raw[k])
@@ -407,6 +466,10 @@ def update_transaction(
         if k in raw and raw[k] is None:
             raw.pop(k)
 
+    if category_set and t.kind in ("transfer", "reversal", "adjustment"):
+        raise unprocessable(
+            "Transfers, reversals and adjustments get their category automatically."
+        )
     if (t.kind == "reversal" or t.status == "reversed") and set(raw) - {"notes"}:
         raise unprocessable(
             "Reversed transactions are locked. Only notes can change; delete the reversal "
@@ -463,6 +526,7 @@ def update_transaction(
         if changes:
             any_change = True
             add_revision(db, x, "update", changes, reason)
+    any_change |= _update_category(db, auth, t, raw, category_set, category_choice, reason)
     if any_change:
         audit(
             db,
@@ -475,6 +539,47 @@ def update_transaction(
         db.commit()
     db.refresh(t)
     return _one_out(db, auth, t)
+
+
+def _cat_name(db: Session, cat_id: int | None) -> str | None:
+    return db.scalar(select(Category.name).where(Category.id == cat_id)) if cat_id else None
+
+
+def _update_category(
+    db: Session,
+    auth: CurrentAuth,
+    t: Transaction,
+    raw: dict[str, object],
+    category_set: bool,
+    choice: object,
+    reason: str | None,
+) -> bool:
+    """Apply an explicit category choice, or re-run automatic categorisation when something
+    that affects it changed. Returns True if anything changed."""
+    before_id, before_src = t.category_id, t.category_source
+    ctx = cats.load_context(db, auth.user.id)
+    if category_set:
+        if choice is None:
+            cats.apply(ctx, t, user_uncategorised=True)
+        else:
+            chosen = cats.choose(db, auth.user.id, choice, t.kind)  # type: ignore[arg-type]
+            cats.apply(ctx, t, user_category_id=chosen.id)
+    elif set(raw) & {"kind", "direction", "merchant", "narration", "account_id"}:
+        cat = db.get(Category, t.category_id) if t.category_id else None
+        if t.category_source == "user" and (cat is None or not cats.fits(cat, t.kind)):
+            t.category_source = "none"  # the old choice no longer makes sense for this type
+        cats.apply(ctx, t, linked_category_id=cats.linked_category(db, t))
+    cats.flush_hits(db, ctx)
+    if before_id != t.category_id or (category_set and before_src != t.category_source):
+        add_revision(
+            db,
+            t,
+            "update",
+            {"category": [_cat_name(db, before_id), _cat_name(db, t.category_id)]},
+            reason if category_set else "Category updated automatically",
+        )
+        return True
+    return category_set and before_src != t.category_source
 
 
 # ---------------- delete ----------------
@@ -584,6 +689,8 @@ def reverse_transaction(
         source="manual",
         reverses_transaction_id=t.id,
     )
+    ctx = cats.load_context(db, auth.user.id)
+    cats.apply(ctx, rev, linked_category_id=t.category_id)
     t.status = "reversed"
     db.add(rev)
     db.flush()

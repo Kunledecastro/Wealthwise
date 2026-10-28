@@ -75,7 +75,15 @@ def test_route_listing_works():
 @pytest.mark.parametrize(("method", "path"), [r for r in _all_routes() if r not in PUBLIC])
 def test_every_non_public_route_rejects_anonymous(api, method, path):
     url = path
-    for param in ("{invite_id}", "{user_id}", "{account_id}", "{txn_id}", "{batch_id}"):
+    for param in (
+        "{invite_id}",
+        "{user_id}",
+        "{account_id}",
+        "{txn_id}",
+        "{batch_id}",
+        "{category_id}",
+        "{rule_id}",
+    ):
         url = url.replace(param, "00000000-0000-4000-8000-000000000000")
     assert "{" not in url, f"add a placeholder for {path}"
     hdr = {"X-CSRF-Token": api.client.cookies.get("ww_csrf")}

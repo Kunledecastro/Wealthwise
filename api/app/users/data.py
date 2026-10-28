@@ -22,7 +22,15 @@ from app.auth.sessions import (
     revoke_user_sessions,
 )
 from app.core.security import hash_identifier, verify_password
-from app.db.models import Account, Transaction, TransactionRevision, User, utcnow
+from app.db.models import (
+    Account,
+    Category,
+    CategoryRule,
+    Transaction,
+    TransactionRevision,
+    User,
+    utcnow,
+)
 from app.db.session import get_db
 from app.finance.service import (
     account_out,
@@ -120,6 +128,9 @@ def _export_payload(db: Session, auth: CurrentAuth) -> dict[str, Any]:
             .order_by(TransactionRevision.id)
         )
     ]
+    cat_names = dict(
+        db.execute(select(Category.id, Category.name).where(Category.user_id == u.id)).all()
+    )
     return {
         "format": "wealthwise-export",
         "version": 1,
@@ -130,6 +141,27 @@ def _export_payload(db: Session, auth: CurrentAuth) -> dict[str, Any]:
             json.loads(account_out(a, *bals[a.id], today).model_dump_json()) for a in accounts
         ],
         "transactions": [json.loads(t.model_dump_json()) for t in txn_outs(db, u.id, live)],
+        "categories": [
+            {
+                "id": str(c.public_id),
+                "name": c.name,
+                "kind": c.kind,
+                "color": c.color,
+                "archived": c.is_archived,
+            }
+            for c in db.scalars(select(Category).where(Category.user_id == u.id))
+        ],
+        "category_rules": [
+            {
+                "match_type": r.match_type,
+                "pattern": r.pattern,
+                "direction": r.direction,
+                "category": cat_names.get(r.category_id),
+                "priority": r.priority,
+                "active": r.is_active,
+            }
+            for r in db.scalars(select(CategoryRule).where(CategoryRule.user_id == u.id))
+        ],
         "deleted_transaction_count": deleted_count,
         "revisions": revisions,
     }

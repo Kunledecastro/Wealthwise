@@ -43,6 +43,10 @@ def create_user(
     user.preferences = UserPreferences(currency=s.default_currency, timezone=s.default_timezone)
     db.add(user)
     db.flush()
+    from app.categorise.service import seed_defaults  # local import avoids a cycle
+
+    seed_defaults(db, user.id)
+    db.flush()
     return user
 
 

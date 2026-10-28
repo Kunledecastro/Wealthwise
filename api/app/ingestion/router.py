@@ -21,9 +21,10 @@ from sqlalchemy.orm import Session
 from app.audit.service import record as audit
 from app.auth import ratelimit
 from app.auth.sessions import CurrentAuth, client_ip, require_auth
+from app.categorise import service as cats
 from app.core.config import get_settings
 from app.core.security import hash_identifier
-from app.db.models import Account, ImportBatch, ImportRow, Transaction, utcnow
+from app.db.models import Account, Category, ImportBatch, ImportRow, Transaction, utcnow
 from app.db.session import get_db
 from app.finance.service import balances_for, get_account, today_for
 from app.ingestion import service
@@ -115,8 +116,17 @@ def _batch_out(db: Session, b: ImportBatch, a: Account) -> ImportBatchOut:
     )
 
 
-def _row_out(r: ImportRow, txn_pub: dict[int, uuid.UUID]) -> ImportRowOut:
+def _row_out(
+    r: ImportRow, txn_pub: dict[int, uuid.UUID], catmap: dict[int, Category]
+) -> ImportRowOut:
+    cat = catmap.get(r.category_id) if r.category_id else None
     return ImportRowOut(
+        merchant_normalised=r.merchant_normalised,
+        category_id=cat.public_id if cat else None,
+        category_name=cat.name if cat else None,
+        category_source=r.category_source,
+        category_confidence=r.category_confidence,
+        category_reason=r.category_reason,
         id=r.public_id,
         row_number=r.row_number,
         outcome=r.outcome,
@@ -166,6 +176,7 @@ def _detail(
                 select(Transaction.id, Transaction.public_id).where(Transaction.id.in_(tids))
             ).all()
         }
+    catmap = {c.id: c for c in db.scalars(select(Category).where(Category.user_id == b.user_id))}
     grid = b.grid or []
     m = b.mapping or {}
     hr = m.get("header_row")
@@ -175,7 +186,7 @@ def _detail(
         mapping=b.mapping,
         headers=headers,
         preview=[r[:30] for r in grid[:15]],
-        rows=[_row_out(r, pub) for r in rows],
+        rows=[_row_out(r, pub, catmap) for r in rows],
         rows_total=total,
         page=page,
         page_size=page_size,
@@ -412,6 +423,8 @@ def update_rows(
     b = _get_batch(db, auth.user.id, batch_id, lock=True)
     _require_staged(b)
     ids = [u.id for u in body.updates]
+    acct = _account_of(db, b)
+    ctx = cats.load_context(db, auth.user.id)
     rows = {
         r.public_id: r
         for r in db.scalars(
@@ -425,7 +438,27 @@ def update_rows(
         if u.kind is not None:
             if u.kind not in service.allowed_kinds(r):
                 raise service.unprocessable(f"Row {r.row_number}: '{u.kind}' isn't allowed here.")
-            r.kind = u.kind
+            if u.kind != r.kind:
+                r.kind = u.kind
+                if r.category_source == "user":
+                    cur = db.get(Category, r.category_id) if r.category_id else None
+                    if cur is not None and not cats.fits(cur, u.kind):
+                        r.category_source = "none"
+                cats.apply_row(ctx, r, acct.id)
+        if "category_id" in u.model_fields_set:
+            if r.kind in ("transfer", "reversal", "adjustment"):
+                raise service.unprocessable(
+                    f"Row {r.row_number}: transfers, reversals and adjustments get their "
+                    "category automatically."
+                )
+            if u.category_id is None:
+                r.category_id, r.category_source = None, "user"
+                r.category_confidence, r.category_reason = 100, "You left this uncategorised"
+            else:
+                c = cats.choose(db, auth.user.id, u.category_id, r.kind or "expense")
+                r.category_id, r.category_source = c.id, "user"
+                r.category_confidence, r.category_reason = 100, "You chose this category"
+                r.category_rule_id = None
         if u.include is not None:
             if u.include and r.outcome in ("error", "duplicate"):
                 why = "it has an error" if r.outcome == "error" else "it is already imported"

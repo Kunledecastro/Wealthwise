@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     Account,
+    Category,
     ImportBatch,
     ReconciliationPoint,
     Transaction,
@@ -102,6 +103,7 @@ def to_entry(t: Transaction) -> Entry:
         transaction_date=t.transaction_date,
         account_id=t.account_id,
         deleted=t.deleted_at is not None,
+        category_id=t.category_id,
     )
 
 
@@ -277,9 +279,20 @@ def txn_outs(db: Session, user_id: int, txns: Sequence[Transaction]) -> list[Tra
             )
         }
 
+    cat_ids = {t.category_id for t in txns if t.category_id}
+    cats: dict[int, Category] = {}
+    if cat_ids:
+        cats = {
+            c.id: c
+            for c in db.scalars(
+                select(Category).where(Category.user_id == user_id, Category.id.in_(cat_ids))
+            )
+        }
+
     out = []
     for t in txns:
         a = accts[t.account_id]
+        cat = cats.get(t.category_id) if t.category_id else None
         cp = counterpart.get(t.id)
         cpa = accts.get(cp.account_id) if cp else None
         out.append(
@@ -304,6 +317,14 @@ def txn_outs(db: Session, user_id: int, txns: Sequence[Transaction]) -> list[Tra
                 reverses_id=links.get(t.reverses_transaction_id or 0),
                 reversed_by_id=reversed_by.get(t.id),
                 refund_of_id=links.get(t.refund_of_transaction_id or 0),
+                merchant_normalised=t.merchant_normalised,
+                category_id=cat.public_id if cat else None,
+                category_name=cat.name if cat else None,
+                category_color=cat.color if cat else None,
+                category_source=t.category_source,
+                category_confidence=t.category_confidence,
+                category_reason=t.category_reason,
+                needs_review=t.needs_review,
                 created_at=t.created_at,
                 updated_at=t.updated_at,
             )

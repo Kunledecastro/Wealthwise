@@ -218,6 +218,7 @@ ACCOUNT_TYPES = ("bank", "wallet", "cash", "savings", "card", "loan")
 ACCOUNT_SOURCES = ("manual", "imported", "simulated", "connected")
 TXN_KINDS = ("income", "expense", "fee", "refund", "transfer", "reversal", "adjustment")
 TXN_STATUSES = ("pending", "posted", "failed", "reversed")
+CATEGORY_SOURCES = ("none", "user", "rule", "system", "linked", "ai")
 TXN_SOURCES = ("manual", "csv", "xlsx", "xls", "pdf", "simulated", "email", "open_banking")
 MAX_MINOR = 10**15  # ₦10 trillion in kobo; well inside JSON's safe-integer range
 
@@ -296,6 +297,18 @@ class Transaction(TimestampMixin, Base):
         ForeignKey("import_batches.id", ondelete="SET NULL", name="fk_transactions_import_batch"),
         index=True,
     )
+    merchant_normalised: Mapped[str | None] = mapped_column(String(120))
+    category_id: Mapped[int | None] = mapped_column(BigInteger)
+    category_source: Mapped[str] = mapped_column(String(8), nullable=False, server_default="none")
+    category_confidence: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default="0"
+    )
+    category_reason: Mapped[str | None] = mapped_column(String(200))
+    category_rule_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("category_rules.id", ondelete="SET NULL", name="fk_txn_category_rule"),
+    )
+    needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     __table_args__ = (
         # The account must belong to the same user as the transaction.
@@ -305,6 +318,15 @@ class Transaction(TimestampMixin, Base):
             name="fk_transactions_account_same_user",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["user_id", "category_id"],
+            ["categories.user_id", "categories.id"],
+            name="fk_transactions_category_same_user",
+        ),
+        CheckConstraint(_in("category_source", CATEGORY_SOURCES), name="ck_txn_category_source"),
+        CheckConstraint("category_confidence BETWEEN 0 AND 100", name="ck_txn_category_confidence"),
+        Index("ix_txn_user_review", "user_id", "needs_review"),
+        Index("ix_txn_category", "category_id"),
         CheckConstraint(_in("kind", TXN_KINDS), name="ck_txn_kind"),
         CheckConstraint("direction IN ('debit', 'credit')", name="ck_txn_direction"),
         CheckConstraint(_in("status", TXN_STATUSES), name="ck_txn_status"),
@@ -501,6 +523,19 @@ class ImportRow(Base):
     transaction_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("transactions.id", ondelete="SET NULL")
     )
+    merchant_normalised: Mapped[str | None] = mapped_column(String(120))
+    category_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("categories.id", ondelete="SET NULL", name="fk_import_rows_category")
+    )
+    category_source: Mapped[str] = mapped_column(String(8), nullable=False, server_default="none")
+    category_confidence: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default="0"
+    )
+    category_reason: Mapped[str | None] = mapped_column(String(200))
+    category_rule_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("category_rules.id", ondelete="SET NULL", name="fk_import_rows_rule"),
+    )
 
     __table_args__ = (
         CheckConstraint(_in("outcome", ROW_OUTCOMES), name="ck_import_row_outcome"),
@@ -542,4 +577,92 @@ class ReconciliationPoint(Base):
             f"abs(statement_balance_minor) <= {MAX_MINOR}", name="ck_recon_statement_range"
         ),
         Index("ix_recon_account_date", "account_id", "as_of_date"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: categories and rules
+# ---------------------------------------------------------------------------
+
+CATEGORY_KINDS = ("expense", "income", "transfer")
+RULE_MATCH_TYPES = ("contains", "starts_with", "equals")
+
+
+class Category(TimestampMixin, Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    slug: Mapped[str | None] = mapped_column(String(40))
+    name: Mapped[str] = mapped_column(CITEXT, nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    color: Mapped[str] = mapped_column(String(7), nullable=False, server_default="#94a3b8")
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "id", name="uq_categories_user_id_id"),
+        UniqueConstraint("user_id", "name", name="uq_categories_user_name"),
+        Index(
+            "uq_categories_user_slug",
+            "user_id",
+            "slug",
+            unique=True,
+            postgresql_where=text("slug IS NOT NULL"),
+        ),
+        CheckConstraint(_in("kind", CATEGORY_KINDS), name="ck_category_kind"),
+        CheckConstraint("color ~ '^#[0-9a-fA-F]{6}$'", name="ck_category_color"),
+        CheckConstraint("length(name) BETWEEN 1 AND 60", name="ck_category_name_len"),
+    )
+
+
+class CategoryRule(TimestampMixin, Base):
+    """User rule: when a transaction's text matches `pattern`, use `category_id`."""
+
+    __tablename__ = "category_rules"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    category_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    match_type: Mapped[str] = mapped_column(String(12), nullable=False)
+    pattern: Mapped[str] = mapped_column(String(100), nullable=False)
+    direction: Mapped[str | None] = mapped_column(String(6))
+    account_id: Mapped[int | None] = mapped_column(BigInteger)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100")
+    created_from: Mapped[str] = mapped_column(String(16), nullable=False, server_default="manual")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_hit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "category_id"],
+            ["categories.user_id", "categories.id"],
+            name="fk_rules_category_same_user",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "account_id"],
+            ["accounts.user_id", "accounts.id"],
+            name="fk_rules_account_same_user",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(_in("match_type", RULE_MATCH_TYPES), name="ck_rule_match_type"),
+        CheckConstraint(
+            "direction IS NULL OR direction IN ('debit', 'credit')", name="ck_rule_dir"
+        ),
+        CheckConstraint(
+            "created_from IN ('manual', 'user_correction')", name="ck_rule_created_from"
+        ),
+        CheckConstraint("length(pattern) BETWEEN 2 AND 100", name="ck_rule_pattern_len"),
     )

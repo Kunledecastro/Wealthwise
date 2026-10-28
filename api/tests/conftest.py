@@ -40,7 +40,7 @@ PASSWORD = "Correct-Horse-7-Battery"
 TABLES = (
     "users, user_preferences, sessions, password_reset_tokens, invites, auth_attempts, "
     "accounts, transactions, transaction_revisions, import_batches, import_rows, "
-    "import_profiles, reconciliation_points"
+    "import_profiles, reconciliation_points, categories, category_rules"
 )
 
 
