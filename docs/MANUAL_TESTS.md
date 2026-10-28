@@ -423,11 +423,11 @@ Open **To review**.
 - **Electricity & utilities** for Ikeja Electric.
 - **Food & groceries · check** for Some Supermarket, which also appears in To review because a generic word is only a suggestion. Click **Confirm** there.
 
-### C6 — Refund follows the purchase
-1. Open a categorised purchase.
-2. Add a **Refund** linked to it: refunds created from the transaction's own panel are linked automatically. If you're adding it from the form, just add a refund for the same merchant.
+### C6 — Refunds and reversals follow the purchase
+1. Add an expense of `20,000` at `Jumia`, then a **Refund** of `5,000` at `Jumia`.
+2. Open a transaction that a bank reversal cancelled (e.g. the Netflix charge from the Phase 3 sample import) and look at its "Reversal of…" partner.
 
-**Expected:** a linked refund shows the same category as the purchase, with "Same as original".
+**Expected:** the refund is in **Shopping** like the purchase. On Categories, Shopping shows ₦15,000 for these two, because the refund reduces its own category. The reversal shows the same category as the charge it cancels, with "Same as original".
 
 ### C7 — Spending by category
 Open **Categories**.
