@@ -5,12 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { CategoryBadge, CategorySelect, useCategories } from "@/components/category-ui";
 import { Money } from "@/components/money";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { SelectField } from "@/components/ui/select";
-import { api, ApiError, KIND_LABEL, type ColumnRole, type CommitResult, type ImportBatch, type ImportDetail, type ImportRow, type Mapping, type TxnKind } from "@/lib/api";
+import { api, ApiError, KIND_LABEL, type Category, type ColumnRole, type CommitResult, type ImportBatch, type ImportDetail, type ImportRow, type Mapping, type TxnKind } from "@/lib/api";
 import { formatDate, formatMinor } from "@/lib/money";
 import { useLoad } from "@/lib/use-load";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ function Review() {
   const [setOpening, setSetOpening] = useState(false);
   const [saveMapping, setSaveMapping] = useState(true);
   const [confirmUndo, setConfirmUndo] = useState(false);
+  const categories = useCategories();
 
   if (error) return <Alert>{error}</Alert>;
   if (!b) return <p role="status" className="text-sm text-[var(--fg-subtle)]">Loading…</p>;
@@ -59,7 +61,7 @@ function Review() {
   const staged = b.status === "staged";
   const needsColumns = staged && (b.mapping?.header_row == null || (b.counts.new ?? 0) + (b.counts.duplicate ?? 0) + (b.counts.possible_duplicate ?? 0) === 0);
 
-  async function updateRows(updates: { id: string; include?: boolean; kind?: string }[]) {
+  async function updateRows(updates: { id: string; include?: boolean; kind?: string; category_id?: string | null }[]) {
     setActionError(null);
     try {
       await api<ImportBatch>(`/api/imports/${b!.id}/rows`, { method: "POST", body: { updates } });
@@ -156,7 +158,7 @@ function Review() {
           <p className="p-4 text-sm text-[var(--fg-subtle)]">No rows here.</p>
         ) : (
           <ul className="divide-y divide-[var(--border)]">
-            {b.rows.map((r) => <RowItem key={r.id} r={r} editable={staged} onChange={(u) => updateRows([{ id: r.id, ...u }])} />)}
+            {b.rows.map((r) => <RowItem key={r.id} r={r} editable={staged} categories={categories.data ?? []} onChange={(u) => updateRows([{ id: r.id, ...u }])} />)}
           </ul>
         )}
       </Card>
@@ -239,7 +241,8 @@ function CommitSummary({ r, accountId }: { r: CommitResult; accountId: string })
   );
 }
 
-function RowItem({ r, editable, onChange }: { r: ImportRow; editable: boolean; onChange: (u: { include?: boolean; kind?: string }) => void }) {
+function RowItem({ r, editable, categories, onChange }: { r: ImportRow; editable: boolean; categories: Category[]; onChange: (u: { include?: boolean; kind?: string; category_id?: string | null }) => void }) {
+  const categorisable = r.kind !== null && ["income", "expense", "fee", "refund"].includes(r.kind) && r.outcome !== "error" && r.outcome !== "duplicate";
   const canToggle = editable && (r.outcome === "new" || r.outcome === "possible_duplicate");
   const label = r.narration || (r.direction === "credit" ? "Money in" : "Money out");
   return (
@@ -279,6 +282,22 @@ function RowItem({ r, editable, onChange }: { r: ImportRow; editable: boolean; o
         ) : r.kind && r.outcome !== "error" ? (
           <p className="text-sm">{r.kind === "transfer" ? "Transfer between my accounts" : KIND_LABEL[r.kind as TxnKind] ?? r.kind}</p>
         ) : null}
+        {categorisable && (
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            {editable && categories.length > 0 ? (
+              <CategorySelect
+                label={`Category for row ${r.row_number}`}
+                categories={categories}
+                txnKind={r.kind!}
+                value={r.category_id ?? ""}
+                onChange={(v) => onChange({ category_id: v || null })}
+              />
+            ) : (
+              <CategoryBadge name={r.category_name} color={null} />
+            )}
+            {r.category_reason && <span className="text-xs text-[var(--fg-subtle)]">{r.category_reason}</span>}
+          </div>
+        )}
       </div>
       {r.amount_minor !== null && r.direction && (
         <Money minor={r.amount_minor} direction={r.direction} className="font-semibold" />

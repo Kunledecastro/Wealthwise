@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CategoryBadge, CategorySelect, LearnPrompt, sourceLabel, useCategories } from "./category-ui";
 import { Money } from "./money";
 import { TransactionForm } from "./transaction-form";
 import { Alert } from "./ui/alert";
@@ -11,6 +12,7 @@ import { formatDate, formatMinor } from "@/lib/money";
 import { useLoad } from "@/lib/use-load";
 
 const FIELD_LABEL: Record<string, string> = {
+  category: "Category",
   amount_minor: "Amount",
   account_id: "Account",
   kind: "Type",
@@ -46,6 +48,9 @@ export function TransactionDetail({ id, accounts, onChanged, onOpenOther }: Prop
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const categories = useCategories();
+  const [learnFor, setLearnFor] = useState<string | null>(null);
+  const [catMsg, setCatMsg] = useState<string | null>(null);
 
   if (error) return <Alert>{error}</Alert>;
   if (!t) return <p role="status" className="text-sm text-[var(--fg-subtle)]">Loading…</p>;
@@ -85,6 +90,20 @@ export function TransactionDetail({ id, accounts, onChanged, onOpenOther }: Prop
     }
   }
 
+  async function setCategory(value: string) {
+    setActionError(null);
+    setCatMsg(null);
+    try {
+      await api(`/api/transactions/${t!.id}`, { method: "PATCH", body: { category_id: value || null } });
+      reload();
+      onChanged(value ? "Category updated." : "Left uncategorised.", false);
+      setLearnFor(value ? t!.id : null);
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : "Could not change the category.");
+    }
+  }
+
+  const categoryEditable = ["income", "expense", "fee", "refund"].includes(t.kind);
   const locked = t.kind === "reversal" || t.status === "reversed";
   const canReverse = t.status === "posted" && !["transfer", "reversal"].includes(t.kind);
 
@@ -95,6 +114,31 @@ export function TransactionDetail({ id, accounts, onChanged, onOpenOther }: Prop
         <p className="text-3xl font-semibold"><Money minor={t.amount_minor} currency={t.currency} direction={t.direction} /></p>
         <p className="mt-1 font-medium">{t.merchant || t.narration || (t.kind === "transfer" ? `${t.direction === "debit" ? "To" : "From"} ${t.counterpart_account_name}` : "")}</p>
       </div>
+
+      <section className="space-y-2 rounded-lg border border-[var(--border)] p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Category</span>
+          <CategoryBadge name={t.category_name} color={t.category_color} needsReview={t.needs_review} />
+          {t.category_source !== "none" && <span className="text-xs text-[var(--fg-subtle)]">{sourceLabel(t.category_source)}</span>}
+        </div>
+        {t.category_reason && <p className="text-xs text-[var(--fg-subtle)]">{t.category_reason}{t.category_source === "system" && t.category_confidence < 70 && " (low confidence)"}</p>}
+        {categoryEditable && categories.data && (
+          <div className="flex flex-wrap items-center gap-2">
+            <CategorySelect
+              label="Change category"
+              categories={categories.data}
+              txnKind={t.kind}
+              value={t.category_source === "user" || t.category_id ? (t.category_id ?? "") : ""}
+              onChange={setCategory}
+            />
+            {t.needs_review && t.category_id && (
+              <Button size="sm" variant="secondary" onClick={() => setCategory(t.category_id!)}>Confirm</Button>
+            )}
+          </div>
+        )}
+        {catMsg && <Alert kind="success">{catMsg}</Alert>}
+        {learnFor && <LearnPrompt transactionId={learnFor} onDone={(m) => { setLearnFor(null); if (m) { setCatMsg(m); reload(); onChanged(m, false); } }} />}
+      </section>
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt className="text-[var(--fg-subtle)]">Status</dt>

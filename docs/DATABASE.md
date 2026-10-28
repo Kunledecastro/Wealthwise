@@ -1,6 +1,6 @@
 # Data model (Phase 0 proposal)
 
-Status: tables from Phases 1–3 are **implemented** (Phase 3 added import_batches, import_rows, import_profiles, reconciliation_points and transactions.import_batch_id) (users, preferences, sessions, reset tokens, invites, auth_attempts, audit_events, currencies, accounts, transactions, transaction_revisions). The rest is the target shape for later phases.
+Status: tables from Phases 1–4 are **implemented** (Phase 3 added import_batches, import_rows, import_profiles, reconciliation_points; Phase 4 added categories, category_rules and the category fields on transactions and import_rows). Category hierarchy (parent_id) and regex rules are deliberately not implemented (D-039). (users, preferences, sessions, reset tokens, invites, auth_attempts, audit_events, currencies, accounts, transactions, transaction_revisions). The rest is the target shape for later phases.
 
 ## 1. Conventions
 

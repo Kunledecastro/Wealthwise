@@ -38,6 +38,7 @@ function Stat({ label, minor, hint, tone }: { label: string; minor: number; hint
 function Home() {
   const { me } = useAuth();
   const { data, error, reload } = useLoad<Summary>("/api/ledger/summary");
+  const review = useLoad<{ count: number }>("/api/categories/review-count");
   const [adding, setAdding] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   if (!me) return null;
@@ -57,6 +58,12 @@ function Home() {
         )}
       </div>
       {flash && <Alert kind="success">{flash}</Alert>}
+      {review.data && review.data.count > 0 && (
+        <Alert kind="info">
+          {review.data.count} transaction{review.data.count === 1 ? " needs" : "s need"} a category.{" "}
+          <Link href="/review" className="font-medium underline">Review now</Link>
+        </Alert>
+      )}
       {error && <Alert>{error}</Alert>}
       {!data && !error && <p role="status" className="text-sm text-[var(--fg-subtle)]">Loading…</p>}
 

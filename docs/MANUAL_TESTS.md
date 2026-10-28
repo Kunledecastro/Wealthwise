@@ -1,6 +1,7 @@
 # Manual tests
 
-- [Phase 3](#phase-3) (current)
+- [Phase 4](#phase-4) (current)
+- [Phase 3](#phase-3)
 - [Phase 2](#phase-2)
 - [Phase 1](#phase-1) (passed 26 Oct 2026)
 
@@ -367,3 +368,99 @@ With F12 + Ctrl+Shift+M (iPhone SE), open an import review. The rows are readabl
 Reply with one line, for example `S1 pass … S11 pass`. For anything that fails, add a screenshot.
 
 **Most useful of all:** try a **real statement** from your own bank (CSV or Excel) in a test account, then tell me whether the columns were detected and whether the balance check passed. **Don't send me the file.** If you want an exact preset added, send a redacted copy with names and account numbers replaced by X.
+
+
+---
+
+## Phase 4
+
+Time needed: about 20 minutes.
+
+### 0. Update and restart
+```
+cd C:\Users\AdekunleOludele\Wealthwise
+git pull
+docker compose up --build -d
+docker compose ps -a
+```
+**Expected:** `migrate` shows Exited (0); `docker compose logs migrate` ends with "Categorised N transaction(s)." The top bar now has **To review** (with a number if anything needs attention) and **Categories**.
+
+### C1 — Your existing data was categorised
+Open **Transactions**.
+
+**Expected:** most rows show a coloured category chip, for example:
+- Shoprite → Food & groceries
+- Bolt → Transport
+- Netflix → Entertainment & subscriptions
+- SMS ALERT and VAT → Bank fees
+- Salary → Salary
+- Transfers → Transfers between my accounts
+
+Open any one: the **Category** box shows the reason, e.g. "Recognised 'SHOPRITE'".
+
+### C2 — The review queue
+Open **To review**.
+
+**Expected:** person-to-person transfers like "NIP TRF TO KUDA/JOHN DOE…" are listed with "Needs a category". The number matches the badge in the top bar.
+
+### C3 — Correct one, and teach a rule
+1. In **To review**, choose **Family support** for one item.
+2. A green box appears: "Always put transactions containing [ … ] in Family support?" Edit the text if needed, keep "Also update … similar transactions" ticked, and click **Create rule**.
+
+**Expected:** a message says how many similar transactions were updated, and they leave the queue. **Categories → Your rules** lists the rule with "learned from you".
+
+### C4 — Rules don't overwrite your own choices
+1. Add an expense: `5,000` at `Mama Put Yaba`, and pick the category **Eating out** yourself.
+2. **Categories → Add rule**: contains `MAMA PUT` → **Family support**, with "Also apply to existing" ticked → **Check matches**, then **Add rule**.
+
+**Expected:** your Mama Put Yaba transaction still says **Eating out**, marked "You chose". New "Mama Put" transactions get Family support.
+
+### C5 — Automatic categories for new entries
+**Add**: an expense of `2,500` at `Chicken Republic Ikeja`, a `1,200` expense at `Ikeja Electric`, and a `3,000` expense at `Some Supermarket`.
+
+**Expected:**
+- **Eating out** for Chicken Republic.
+- **Electricity & utilities** for Ikeja Electric.
+- **Food & groceries · check** for Some Supermarket, which also appears in To review because a generic word is only a suggestion. Click **Confirm** there.
+
+### C6 — Refund follows the purchase
+1. Open a categorised purchase.
+2. Add a **Refund** linked to it: refunds created from the transaction's own panel are linked automatically. If you're adding it from the form, just add a refund for the same merchant.
+
+**Expected:** a linked refund shows the same category as the purchase, with "Same as original".
+
+### C7 — Spending by category
+Open **Categories**.
+
+**Expected:**
+- Bars for this month's spending by category; click one to see its transactions.
+- "Total spending" equals **Spending** on the Home page for this month.
+- The ← → buttons switch months.
+
+### C8 — Manage categories
+1. **Add category**: `Generator diesel` (Spending), any colour.
+2. Edit a transaction's category to Generator diesel.
+3. Edit the category → **Merge into another category** → Electricity & utilities.
+
+**Expected:**
+- Step 1: the category appears.
+- Step 2: the transaction shows it.
+- Step 3: the transaction now shows Electricity & utilities and Generator diesel is gone.
+- **Bank fees** can be renamed but has no Archive or Delete.
+
+### C9 — Categories in statement imports
+Import `docs\samples\sample-gtbank-style-statement.csv` into a **new** test account.
+
+**Expected:**
+- Each new row shows a category menu, pre-filled where recognised (Salary, Bank fees, Entertainment…).
+- The NIP transfer row is empty.
+- If you choose one for it before importing, the saved transaction shows "You chose".
+
+### C10 — Filters and export
+1. In **Transactions**, filter Category = Uncategorised, then tick "Only show ones that need a category".
+2. Click **CSV**.
+
+**Expected:** the filters narrow the list correctly, and the CSV has a **category** column.
+
+### Reporting back
+Reply with one line, for example `C1 pass … C10 pass`, and add a screenshot for any failure. If built-in recognition misses merchants you use often, list them and I'll add them.

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "./auth-provider";
+import { CategorySelect, useCategories } from "./category-ui";
 import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Field } from "./ui/field";
@@ -36,7 +37,11 @@ export function TransactionForm({ accounts, existing, defaultAccountId, onDone }
   const notesOnly = existing?.status === "reversed";
   const usable = accounts.filter((a) => !a.is_archived || a.id === existing?.account_id);
 
-  const [mode, setMode] = useState<Mode>((existing?.kind as Mode) ?? "expense");
+  const [mode, setModeRaw] = useState<Mode>((existing?.kind as Mode) ?? "expense");
+  function setMode(m: Mode) {
+    setModeRaw(m);
+    setCategoryId(""); // categories differ between spending and income
+  }
   const [accountId, setAccountId] = useState(existing?.account_id ?? defaultAccountId ?? usable[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState(usable.find((a) => a.id !== accountId)?.id ?? "");
   const [amount, setAmount] = useState(existing ? minorToInput(existing.amount_minor) : "");
@@ -49,6 +54,8 @@ export function TransactionForm({ accounts, existing, defaultAccountId, onDone }
   const [narration, setNarration] = useState(existing?.narration ?? "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [reason, setReason] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const categories = useCategories();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -115,6 +122,7 @@ export function TransactionForm({ accounts, existing, defaultAccountId, onDone }
             narration,
             notes,
             ...(mode === "adjustment" ? { direction } : {}),
+            ...(categoryId ? { category_id: categoryId } : {}),
           },
         });
         onDone(`${MODES.find((m) => m.value === mode)?.label} saved.`);
@@ -209,6 +217,21 @@ export function TransactionForm({ accounts, existing, defaultAccountId, onDone }
 
       {mode !== "transfer" && (
         <Field label={merchantLabel} value={merchant} maxLength={120} onChange={(e) => setMerchant(e.target.value)} placeholder={mode === "income" ? "e.g. Employer" : "e.g. Shoprite"} />
+      )}
+      {!isEdit && categories.data && (mode === "expense" || mode === "income" || mode === "fee" || mode === "refund") && (
+        <div className="space-y-1.5">
+          <label htmlFor="txn-category" className="block text-sm font-medium">Category</label>
+          <CategorySelect
+            id="txn-category"
+            categories={categories.data}
+            txnKind={mode}
+            value={categoryId}
+            onChange={setCategoryId}
+            emptyLabel="Automatic (recommended)"
+            className="w-full min-h-10"
+          />
+          <p className="text-sm text-[var(--fg-subtle)]">Leave on Automatic and Wealthwise uses your rules and known merchants.</p>
+        </div>
       )}
       <Field label="Description (optional)" value={narration} maxLength={500} onChange={(e) => setNarration(e.target.value)} />
       <Field label="Notes (optional)" value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} />

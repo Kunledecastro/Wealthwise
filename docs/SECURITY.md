@@ -109,3 +109,12 @@ To be verified with a qualified Nigerian lawyer/compliance adviser — listed so
 | Every import action audited (uploaded, committed, discarded, undone, simulated) | Implemented |
 | Raw file contents never logged | Implemented (log grep in tests and manual run) |
 
+## 8. Implementation status (Phase 4: categories)
+
+| Control | Status |
+|---|---|
+| Categories and rules owner-scoped; composite same-user foreign keys from transactions and rules to categories | Implemented, with isolation tests |
+| Rules use substring/prefix/equality only (no regex), pattern length 2–100, max 500 rules and 200 categories per user | Implemented |
+| User choices never overwritten by automatic processes | Implemented, tested |
+| Category changes made by you are recorded in the transaction's history; rule and category changes are audited | Implemented |
+

@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { ArrowLeftRight, Download, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { CategoryBadge, useCategories } from "@/components/category-ui";
 import { Money, STATUS_LABEL, StatusPill } from "@/components/money";
 import { TransactionDetail } from "@/components/transaction-detail";
 import { TransactionForm } from "@/components/transaction-form";
@@ -39,6 +40,8 @@ function Transactions() {
     from: "",
     to: "",
     q: "",
+    category: params.get("category") ?? "",
+    review: params.get("review") === "1" ? "1" : "",
   });
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
@@ -53,6 +56,8 @@ function Transactions() {
     if (filters.from) p.set("date_from", filters.from);
     if (filters.to) p.set("date_to", filters.to);
     if (filters.q.trim()) p.set("q", filters.q.trim());
+    if (filters.category) p.set("category", filters.category);
+    if (filters.review) p.set("needs_review", "true");
     return p;
   }, [filters]);
 
@@ -61,6 +66,7 @@ function Transactions() {
   listQuery.set("page_size", String(PAGE_SIZE));
   const list = useLoad<TransactionPage>(`/api/transactions?${listQuery}`);
   const accounts = useLoad<Account[]>("/api/accounts?include_archived=true");
+  const categories = useCategories();
 
   function setFilter(k: keyof typeof filters, v: string) {
     setFilters((f) => ({ ...f, [k]: v }));
@@ -91,7 +97,7 @@ function Transactions() {
       {flash && <Alert kind="success">{flash}</Alert>}
 
       <Card className="p-4 sm:p-4">
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <Field label="Search" placeholder="Merchant, description, notes" value={filters.q} onChange={(e) => setFilter("q", e.target.value)} />
           <SelectField label="Account" value={filters.account} onChange={(e) => setFilter("account", e.target.value)}>
             <option value="">All accounts</option>
@@ -105,11 +111,20 @@ function Transactions() {
             <option value="">Any status</option>
             {Object.entries(STATUS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </SelectField>
+          <SelectField label="Category" value={filters.category} onChange={(e) => setFilter("category", e.target.value)}>
+            <option value="">All categories</option>
+            <option value="none">Uncategorised</option>
+            {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </SelectField>
           <Field label="From" type="date" value={filters.from} onChange={(e) => setFilter("from", e.target.value)} />
           <Field label="To" type="date" value={filters.to} onChange={(e) => setFilter("to", e.target.value)} />
         </div>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={filters.review === "1"} onChange={(e) => setFilter("review", e.target.checked ? "1" : "")} className="h-4 w-4 accent-[var(--accent)]" />
+          Only show ones that need a category
+        </label>
         {anyFilter && (
-          <button className="mt-3 text-sm text-[var(--accent)] hover:underline" onClick={() => { setFilters({ account: "", kind: "", status: "", from: "", to: "", q: "" }); setPage(1); }}>
+          <button className="mt-3 text-sm text-[var(--accent)] hover:underline" onClick={() => { setFilters({ account: "", kind: "", status: "", from: "", to: "", q: "", category: "", review: "" }); setPage(1); }}>
             Clear filters
           </button>
         )}
@@ -183,6 +198,9 @@ function Row({ t, onOpen }: { t: Transaction; onOpen: () => void }) {
           <p className="truncate text-sm text-[var(--fg-subtle)]">
             {formatDate(t.transaction_date)} · {KIND_LABEL[t.kind]} · {t.account_name}
           </p>
+          {t.kind !== "transfer" && t.kind !== "adjustment" && (
+            <CategoryBadge name={t.category_name} color={t.category_color} needsReview={t.needs_review} className="mt-1" />
+          )}
         </div>
         <div className="flex flex-col items-end gap-1">
           <Money minor={t.amount_minor} currency={t.currency} direction={t.direction} className={cn("font-semibold", (t.status === "failed" || t.status === "reversed") && "text-[var(--fg-subtle)] line-through")} />

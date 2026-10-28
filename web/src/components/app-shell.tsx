@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { LogOut } from "lucide-react";
 import { api } from "@/lib/api";
+import { useLoad } from "@/lib/use-load";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./auth-provider";
 import { Brand } from "./brand";
@@ -15,6 +16,8 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
   const router = useRouter();
   const pathname = usePathname();
   const [signingOut, setSigningOut] = useState(false);
+  // Refetched on every page change so the badge stays current.
+  const review = useLoad<{ count: number }>(me ? `/api/categories/review-count?p=${encodeURIComponent(pathname)}` : null);
 
   useEffect(() => {
     if (!loading && !me && !error) router.replace("/login");
@@ -36,9 +39,11 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
     );
   }
 
-  const links = [
+  const links: { href: string; label: string; badge?: number }[] = [
     { href: "/", label: "Home" },
     { href: "/transactions", label: "Transactions" },
+    { href: "/review", label: "To review", badge: review.data?.count ?? 0 },
+    { href: "/categories", label: "Categories" },
     { href: "/accounts", label: "Accounts" },
     { href: "/imports", label: "Imports" },
     { href: "/settings", label: "Settings" },
@@ -74,6 +79,9 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
                 )}
               >
                 {l.label}
+                {l.badge ? (
+                  <span className="ml-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white tabular" aria-label={`${l.badge} to review`}>{l.badge}</span>
+                ) : null}
               </Link>
             ))}
             <button

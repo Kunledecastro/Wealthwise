@@ -189,6 +189,14 @@ export type Transaction = {
   reverses_id: string | null;
   reversed_by_id: string | null;
   refund_of_id: string | null;
+  merchant_normalised: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  category_color: string | null;
+  category_source: "none" | "user" | "rule" | "system" | "linked" | "ai";
+  category_confidence: number;
+  category_reason: string | null;
+  needs_review: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -249,6 +257,12 @@ export type ImportRow = {
   kind: string | null;
   allowed_kinds: string[];
   transaction_id: string | null;
+  merchant_normalised: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  category_source: string;
+  category_confidence: number;
+  category_reason: string | null;
 };
 
 export type ImportBatch = {
@@ -303,3 +317,61 @@ export type ReconciliationRecord = {
 };
 
 export type AppConfig = { demo_mode: boolean; upload_max_mb: number };
+
+// ---- Phase 4: categories ----
+
+export type Category = {
+  id: string;
+  slug: string | null;
+  name: string;
+  kind: "expense" | "income" | "transfer";
+  color: string;
+  is_archived: boolean;
+  locked: boolean;
+  transaction_count: number;
+  rule_count: number;
+};
+
+export type CategoryRule = {
+  id: string;
+  category_id: string;
+  category_name: string;
+  match_type: "contains" | "starts_with" | "equals";
+  pattern: string;
+  direction: "debit" | "credit" | null;
+  account_id: string | null;
+  account_name: string | null;
+  priority: number;
+  created_from: "manual" | "user_correction";
+  is_active: boolean;
+  hit_count: number;
+};
+
+export type RuleSuggestion = {
+  pattern: string | null;
+  match_type: string;
+  category_id: string | null;
+  category_name: string | null;
+  similar_count: number;
+};
+
+export type ByCategoryRow = {
+  category_id: string | null;
+  name: string;
+  color: string;
+  kind: string | null;
+  gross_spending: number;
+  refunds: number;
+  net_spending: number;
+  income: number;
+  transaction_count: number;
+};
+
+export type ByCategory = { date_from: string; date_to: string; currency: string; rows: ByCategoryRow[] };
+
+/** Which categories fit a transaction type (mirrors the server rule). */
+export function categoryKindFor(txnKind: string): "expense" | "income" | null {
+  if (txnKind === "expense" || txnKind === "fee" || txnKind === "refund") return "expense";
+  if (txnKind === "income") return "income";
+  return null;
+}

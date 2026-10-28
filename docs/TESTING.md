@@ -75,3 +75,14 @@ Backend tests run against a real PostgreSQL database `wealthwise_test`, as the r
 | pip-audit | no known vulnerabilities |
 | Live run via web origin | GTBank-style CSV → 9 rows, statement balance matched; same statement as .xlsx → 9 duplicates; Kuda credit matched as transfer; simulated events reconciled; 11 MB upload → clear 413 |
 | CI | now also imports a sample statement through the running Docker stack (`scripts/smoke_import.sh`) |
+
+## Latest results (Phase 4, 28 Oct 2026)
+
+| Check | Result |
+|---|---|
+| pytest (all backend) | 360 passed |
+| Ledger engine branch coverage | 100% (incl. R13–R14 spending by category, plus a property test that categories always add up to totals) |
+| Categorisation package coverage | 90% (engine 96%) |
+| vitest / eslint / tsc / next build | clean |
+| migrate-check incl. drift | OK |
+| Upgrade backfill on dev data | 50 existing transactions categorised; 4 sent to review; categories summed exactly to the month's net spending |

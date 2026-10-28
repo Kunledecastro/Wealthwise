@@ -5,8 +5,8 @@
 | 0 | Discovery, architecture, data model, security design, dependencies, acceptance criteria | **Approved** (26 Oct 2026) |
 | 1 | Repo scaffold, Docker Compose, CI, FastAPI + Next.js skeleton, Postgres + Alembic, **authentication & user preferences** | **Accepted** (26 Oct 2026) |
 | 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export, account deletion, email change | **Accepted** (28 Oct 2026, manual checks not reported) |
-| 3 | Ingestion framework + CSV/XLSX/XLS adapters, dedupe, import review screen, transfer & reversal matching, reconciliation, undo, simulated bank events | **Complete — awaiting your manual checks** (28 Oct 2026) |
-| 4 | Categories, rules engine, review queue, learn-from-correction | Not started |
+| 3 | Ingestion framework + CSV/XLSX/XLS adapters, dedupe, import review screen, transfer & reversal matching, reconciliation, undo, simulated bank events | **Accepted** (28 Oct 2026) |
+| 4 | Categories, rules engine, review queue, learn-from-correction, spending by category | **Complete — awaiting your manual checks** (28 Oct 2026) |
 | 5 | Dashboard and reports (CSV export, printable summary) | Not started |
 | 6 | Budgets, thresholds, projections, suggested budgets | Not started |
 | 7 | Savings goals and surplus calculation | Not started |
@@ -305,3 +305,57 @@ Migration 0003 runs automatically. The new settings are optional: `DEMO_MODE` de
 - If rows within the same day appear in an unusual order, the running-balance check may not use the closing balance. The import still works; only the automatic balance check is skipped, with a warning.
 - Transfer matching needs both sides within 2 days and the exact same amount. A transfer whose fee is included in the amount won't match automatically; change the type in review instead.
 - Demo transactions count in totals while they exist. Undo the simulated import to remove them.
+
+---
+
+## Phase 4 — report (28 Oct 2026)
+
+**Objective:** every transaction gets a trustworthy category with a visible reason; uncertain ones go to a review queue; your corrections can become rules; spending is broken down by category with the same accuracy as all other totals.
+
+### What was built
+
+- **22 default categories** for every user, existing users included (seeded by migration 0004). You can add, rename, recolour, archive, merge or delete your own.
+- **Categorisation engine** (`api/app/categorise/engine.py`, pure and deterministic):
+  - Your choice wins.
+  - Then fixed types: fees, transfers, and refunds or reversals linked to their original.
+  - Then your rules.
+  - Then built-in recognition of about 150 common Nigerian merchants and words.
+  - Anything left goes to review.
+  - Every result has a confidence and a reason. Generic words are suggestions only.
+- **Merchant normalisation**, e.g. "POS PURCHASE SHOPRITE LEKKI ••••7895" → "SHOPRITE LEKKI". Used for rules and suggestions.
+- **Rules**: contains / starts with / exact merchant, with optional account restriction, priority, pause and hit counts. You can preview "N would change", apply a rule to existing transactions, and "Re-run my rules".
+- **Learning from corrections**: after you pick a category, Wealthwise offers an editable rule and to update similar transactions. Nothing happens unless you accept.
+- **To review queue**: confirm, change or bulk-assign, or deliberately leave transactions uncategorised. The nav badge and a Home alert show the count.
+- **Categories everywhere**: manual entry (Automatic by default), the transaction detail panel (with reason and history), transaction filters (by category, "needs a category"), import review rows, CSV and JSON export.
+- **Spending by category** (ledger rules R13–R14) for any month, on the Categories page.
+- **Upgrade backfill**: the migrate service runs `categorise-pending` automatically.
+
+### Acceptance criteria
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Default and custom categories; edit, archive, merge, delete safely | Pass | `test_create_rename_archive_delete`, `test_delete_used_category_refused_merge_instead` |
+| 2 | Rules before built-in recognition; built-in before review | Pass | engine precedence tests, `test_rule_beats_builtin_and_respects_filters` |
+| 3 | Category + confidence + reason on every transaction | Pass | `test_automatic_categories_with_reasons` |
+| 4 | Uncertain → review queue; bulk tools | Pass | `test_bulk_assign_modes`, review-count tests |
+| 5 | Learn from corrections via explicit, opt-in rules; never overwrite user choices | Pass | `test_rule_suggestion_after_correction`, `test_create_rule_applies_to_existing_but_not_user_choices`, `test_user_choice_is_never_overwritten` |
+| 6 | Refunds/reversals inherit; transfers/fees fixed | Pass | `test_refund_and_reversal_inherit_category`, `test_transfers_and_adjustments` |
+| 7 | Import review shows and honours categories; undo restores | Pass | `test_import_suggests_categories_and_honours_changes`, `test_transfer_match_recategorises_partner_and_undo_restores` |
+| 8 | Spending by category adds up to totals | Pass | R13–R14 + property test; API test; live run (₦637,335.72 both ways) |
+| 9 | Existing data categorised on upgrade | Pass | `test_cli_categorise_pending`; dev-data backfill |
+| 10 | Isolation, security, CI | Pass | `test_users_cannot_touch_each_others_categories`, anonymous sweep covers all new routes; 360 tests |
+
+### Upgrading your running copy
+
+```
+git pull
+docker compose up --build -d
+```
+The migration adds the categories, and the migrate step then categorises your existing transactions. Open **To review** to handle the uncertain ones.
+
+### Known limitations
+
+- Built-in recognition is a fixed word list, so local businesses won't be recognised until you teach Wealthwise with a rule (one click after a correction).
+- No sub-categories yet.
+- Person-to-person transfers ("NIP TRF TO CHIOMA") can't be guessed. They go to review, where one correction plus a rule handles the rest.
+- AI suggestions are planned for Phase 10. They will only ever be suggestions, behind your rules.
