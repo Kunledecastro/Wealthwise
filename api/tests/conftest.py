@@ -40,7 +40,7 @@ PASSWORD = "Correct-Horse-7-Battery"
 TABLES = (
     "users, user_preferences, sessions, password_reset_tokens, invites, auth_attempts, "
     "accounts, transactions, transaction_revisions, import_batches, import_rows, "
-    "import_profiles, reconciliation_points, categories, category_rules"
+    "import_profiles, reconciliation_points, categories, category_rules, budgets, budget_lines"
 )
 
 
@@ -83,6 +83,12 @@ class Api:
 
     def patch(self, url: str, json: Any = None) -> Any:
         return self.client.patch(url, json=json, headers=self._hdr())
+
+    def put(self, url: str, json: Any = None) -> Any:
+        return self.client.put(url, json=json, headers=self._hdr())
+
+    def delete(self, url: str) -> Any:
+        return self.client.delete(url, headers=self._hdr())
 
     def upload(self, url: str, data: dict[str, str], name: str, content: bytes) -> Any:
         return self.client.post(

@@ -7,6 +7,7 @@ from starlette.responses import Response
 
 from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
+from app.budgets.router import router as budgets_router
 from app.categorise.router import ledger_router as by_category_router
 from app.categorise.router import router as categories_router
 from app.core.config import get_settings
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(categories_router)
     app.include_router(by_category_router)
     app.include_router(reports_router)
+    app.include_router(budgets_router)
     app.include_router(admin_router)
     return app
 

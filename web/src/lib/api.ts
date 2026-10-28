@@ -50,7 +50,7 @@ export async function parseError(res: Response): Promise<ApiError> {
 
 export async function api<T>(
   path: string,
-  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; form?: FormData } = {},
+  options: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; form?: FormData } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -424,4 +424,57 @@ export type Overview = {
   balances_are_estimated: boolean;
   needs_review_count: number;
   generated_on: string;
+};
+
+// ---- Phase 6: budgets ----
+
+export type BudgetLine = {
+  id: string;
+  category_id: string | null;
+  name: string;
+  color: string;
+  archived: boolean;
+  planned_minor: number;
+  rollover_minor: number;
+  spent_minor: number;
+  available_minor: number;
+  remaining_minor: number;
+  percent_used: number | null;
+  threshold_reached: number | null;
+  over: boolean;
+  projected_minor: number | null;
+  projected_over: boolean;
+  safe_per_day_minor: number | null;
+  days_left: number;
+  status: "ok" | "threshold" | "over";
+};
+
+export type Budget = {
+  id: string;
+  rollover_enabled: boolean;
+  alert_thresholds: number[];
+  thresholds_overridden: boolean;
+  lines: BudgetLine[];
+  overall: BudgetLine | null;
+  total_planned: number;
+  total_spending: number;
+  budgeted_spending: number;
+  unbudgeted_spending: number;
+  unbudgeted: { category_id: string | null; name: string; color: string; net_spending: number }[];
+  attention_count: number;
+};
+
+export type BudgetPage = {
+  month: string;
+  today: string;
+  currency: string;
+  default_thresholds: number[];
+  previous_month_has_budget: boolean;
+  budget: Budget | null;
+};
+
+export type BudgetSuggestions = {
+  month: string;
+  based_on: string[];
+  suggestions: { category_id: string; name: string; color: string; amount_minor: number; months: { month: string; net_spending: number }[] }[];
 };

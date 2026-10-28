@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 import { BarChart3, Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { useAuth } from "@/components/auth-provider";
+import { BudgetCard } from "@/components/budgets/budget-card";
 import { BalanceStatusBadge, Money } from "@/components/money";
 import { BalancesNote, Kpis, PeriodFilters, RankedBars, categoryBars, merchantBars, pageQuery, useOverview, useReportParams } from "@/components/reports/report-bits";
 import { TrendChart } from "@/components/reports/trend-chart";
@@ -90,6 +91,8 @@ function Home() {
                 <Kpis o={o} />
                 <p className="text-xs text-[var(--fg-subtle)]">Transfers between your own accounts and balance adjustments are not counted as income or spending.</p>
               </section>
+
+              {period.preset === "this_month" && !account && <BudgetCard refreshKey={o.summary.transaction_count} />}
 
               <Card>
                 <TrendChart key={`${o.date_from}-${o.granularity}`} series={o.series} granularity={o.granularity} title={o.granularity === "day" ? "Spending by day" : "Income and spending"} />

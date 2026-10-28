@@ -105,3 +105,21 @@ describe("periods", () => {
     expect(compactMinor(-1_500_00)).toBe("-₦1.5k");
   });
 });
+
+import { monthName, monthStart as ms, parseThresholds } from "./periods";
+
+describe("budget helpers", () => {
+  it("names months", () => {
+    expect(monthName("2026-10-01")).toBe("October 2026");
+    expect(monthName("2026-09-01", { short: true, year: false })).toBe("Sep");
+    expect(ms("2026-01-15", -1)).toBe("2025-12-01");
+  });
+  it("parses thresholds strictly", () => {
+    expect(parseThresholds("90, 70 100 70")).toEqual([70, 90, 100]);
+    expect(parseThresholds("")).toBeNull();
+    expect(parseThresholds("0")).toBeNull();
+    expect(parseThresholds("201")).toBeNull();
+    expect(parseThresholds("70.5")).toBeNull();
+    expect(parseThresholds("1,2,3,4,5,6")).toBeNull();
+  });
+});

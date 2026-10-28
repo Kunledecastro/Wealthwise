@@ -42,6 +42,7 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
   const links: { href: string; label: string; badge?: number }[] = [
     { href: "/", label: "Home" },
     { href: "/transactions", label: "Transactions" },
+    { href: "/budgets", label: "Budgets" },
     { href: "/reports", label: "Reports" },
     { href: "/review", label: "To review", badge: review.data?.count ?? 0 },
     { href: "/categories", label: "Categories" },

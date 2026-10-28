@@ -7,8 +7,8 @@
 | 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export, account deletion, email change | **Accepted** (28 Oct 2026, manual checks not reported) |
 | 3 | Ingestion framework + CSV/XLSX/XLS adapters, dedupe, import review screen, transfer & reversal matching, reconciliation, undo, simulated bank events | **Accepted** (28 Oct 2026) |
 | 4 | Categories, rules engine, review queue, learn-from-correction, spending by category | **Accepted** (28 Oct 2026, manual checks not reported) |
-| 5 | Dashboard and reports: period selector, comparisons, trend charts, top categories and merchants, CSV export, printable summary | **Complete — awaiting your manual checks** (28 Oct 2026) |
-| 6 | Budgets, thresholds, projections, suggested budgets | Not started |
+| 5 | Dashboard and reports: period selector, comparisons, trend charts, top categories and merchants, CSV export, printable summary | **Accepted** (28 Oct 2026, manual checks not reported) |
+| 6 | Budgets, thresholds, projections, suggested budgets, carry-over | **Complete — awaiting your manual checks** (28 Oct 2026) |
 | 7 | Savings goals and surplus calculation | Not started |
 | 8 | Spending intelligence: recurring detection, duplicates, spikes, insights | Not started |
 | 9 | In-app notifications | Not started |
@@ -415,3 +415,62 @@ No database migration in this phase.
 - Figures are shown in one currency at a time (NGN by default). Activity in other currencies is flagged and never added in.
 - The printable summary relies on the browser's own "Save as PDF". The server does not generate PDF files.
 - Dark mode follows your device setting; there is no in-app toggle yet.
+
+## Phase 6 — report (28 Oct 2026)
+
+**Objective:** monthly budgets you can trust. You set each budget yourself; Wealthwise computes spent, pace and what is left from the same calculation code as the dashboard.
+
+### What was built
+
+- **Ledger engine, rules R19–R24** (`api/app/ledger/engine.py`, documented in RULES.md):
+  - **Spent** per line is the category's net spending for the month. An overall line counts all net spending. Everything else is reported as unbudgeted.
+  - **Available, remaining, % used** and **thresholds** for each line, plus an "over" flag.
+  - **Carry-over:** unspent money moves to the same category next month. Overspending never does. It chains through consecutive months and is recalculated live.
+  - **Projection** ("at your current pace", from day 7) and **safe per day**.
+  - **Suggested budget:** the average of the last 3 complete months, rounded up to whole ₦1,000. It is offered only when there was spending in at least 2 of those months.
+- **Database (migration 0005):** `budgets` (one per user, month and currency; carry-over switch; optional threshold override) and `budget_lines` (category or overall, planned amount). Both are tied to the owning user by composite keys. Spent, carry-over and projections are never stored.
+- **Budgets API:**
+  - `GET /api/budgets?month=`: live figures; `budget` is null when no budget has been set.
+  - `GET /api/budgets/suggestions`
+  - `POST /api/budgets`: start blank, copy the previous month, or use suggestions.
+  - `PATCH /api/budgets/{id}`: carry-over and alert levels.
+  - `PUT /api/budgets/{id}/lines`: replaces all lines in one save.
+  - `DELETE /api/budgets/{id}`
+  - Every change writes an audit event.
+- **Categories:** a category in a budget can't be deleted (you're asked to remove it from the budget or archive it). Merging a category moves its budget lines; if the target already has a line, the two amounts are added together.
+- **Your data:** budgets are included in the JSON export and deleted with your account.
+- **Budgets page** (`/budgets`, new menu item):
+  - Month arrows to move between months.
+  - Create from suggestions (each suggestion shows the three monthly figures behind it), copy last month, or start blank.
+  - Summary tiles, an optional overall limit, and one row per category. Each row has a status ("On track", "Reached 90%", "Over by ₦X", always with an icon), a progress bar with tick marks at each alert level, spent of available (with any carry-over shown), what's left, a safe daily amount and the pace estimate.
+  - "Spending not in the budget" lists unbudgeted categories and uncategorised spending, each linked to its transactions.
+  - Editor with "spent so far" next to each category and a running total.
+  - Settings: carry-over, alert levels for this month, and delete (with an inline confirmation).
+- **Home:** a budget card for the current month (shown when viewing This month for all accounts) with the overall limit and the lines that need attention, or a prompt to set a budget.
+
+### Acceptance criteria
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Monthly budget per category plus optional overall limit; blank/copy/suggested; edit and delete | Pass | `test_lines_spent_unbudgeted_and_status`, `test_copy_previous_and_suggestions`, `test_delete_budget_and_isolation`; UI flow driven in headless Chromium |
+| 2 | Budgeted, carried over, available, spent (after refunds), remaining; unbudgeted shown separately | Pass | R19–R20 tests; API test checks budget totals equal the reports overview (₦87,000 both ways) |
+| 3 | Thresholds from Settings, overridable per budget; status in words and icon; Home card | Pass | `test_thresholds_from_settings_and_override`, R21 tests, screenshots |
+| 4 | Pace estimate from day 7 and safe per day, labelled as estimates | Pass | R23 tests, `test_projection_and_safe_per_day` |
+| 5 | Suggestions from 3 complete months with their figures, applied only on request | Pass | R24 tests, `test_copy_previous_and_suggestions`; live: 5 suggestions matched hand calculation |
+| 6 | Optional carry-over of unspent money only, chained and live | Pass | `test_rollover_chains_and_never_carries_overspending` (incl. editing an August transaction), R22 tests |
+| 7 | Figures add up; engine 100% branch coverage; isolation | Pass | property tests `test_prop_budget_lines_plus_unbudgeted_equal_total`, `test_prop_line_status_invariants`; coverage 100%; isolation test; anonymous sweep covers new routes; 431 backend tests |
+
+### Upgrading your running copy
+
+```
+git pull
+docker compose up --build -d
+```
+The migrate step adds the two budget tables. Nothing else changes.
+
+### Known limitations
+
+- **Monthly budgets only.** Custom periods (e.g. salary date to salary date) are not supported yet.
+- **The estimate is a simple straight-line pace.** A big one-off payment early in the month (rent, school fees) will make the estimate high for that category. It is labelled as an estimate for this reason.
+- **No push alerts yet.** Threshold warnings show on the Budgets page and Home. Notifications arrive in Phase 9.
+- **Naira only.** Budgets cover NGN spending.

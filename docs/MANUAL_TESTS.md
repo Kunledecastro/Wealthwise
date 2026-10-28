@@ -1,6 +1,7 @@
 # Manual tests
 
-- [Phase 5](#phase-5) (current)
+- [Phase 6](#phase-6) (current)
+- [Phase 5](#phase-5)
 - [Phase 4](#phase-4)
 - [Phase 3](#phase-3)
 - [Phase 2](#phase-2)
@@ -554,3 +555,88 @@ Choose **Custom** with a range where you have no transactions (for example, last
 
 ### Reporting back
 Reply with one line, for example `D1 pass … D10 pass`, and add a screenshot for any failure.
+
+---
+
+## Phase 6
+
+Time needed: about 15 minutes. Suggestions need categorised spending in at least two of the last three months (July–September for an October budget). If you don't have that, you can still test everything except B2.
+
+### 0. Update and restart
+```
+cd C:\Users\AdekunleOludele\Wealthwise
+git pull
+docker compose up --build -d
+```
+Sign in. **Budgets** is a new item in the menu.
+
+### B1 — No budget yet
+Open **Budgets**.
+
+**Expected:** "No budget for October 2026 yet" with **Start blank**, plus **Use these suggestions** if you have enough history. Home shows a "No budget for October" card with **Set a budget**.
+
+### B2 — Suggestions
+Look at the suggestion list before clicking anything.
+
+**Expected:** each category shows three monthly figures and a suggested amount. Check one by hand: add the three figures, divide by 3, and round **up** to the next ₦1,000. Nothing is saved until you click.
+
+### B3 — Create and edit
+1. Click **Use these suggestions** (or **Start blank**).
+2. In the editor, change one amount, remove one category, add one with **Add a category**, and type `150000` under **Overall spending limit**.
+3. Click **Save budget**.
+
+**Expected:**
+- Step 2: the running total updates as you type.
+- Step 3: "Budget saved." and one row per category.
+
+### B4 — Spent matches reality
+Pick a category row and click its name.
+
+**Expected:** the Transactions page opens filtered to that category for this month. The posted amounts, minus any refunds, add up to the row's **spent** figure.
+
+### B5 — Alert levels
+1. Edit one category so its budget is a little below what you've already spent.
+2. Edit another so you've spent about 75% of it.
+
+**Expected:**
+- Step 1: the row shows a red "Over by ₦X" with an icon.
+- Step 2: the row shows an amber "Reached 70%".
+- Both appear on the Home budget card.
+
+### B6 — Custom alert levels
+In **Budget settings**, type `50, 100` and click **Save**. Then clear the box and save again.
+
+**Expected:**
+- First save: rows re-evaluate at 50% and 100%.
+- Second save: it goes back to the levels in Settings.
+
+### B7 — Estimates
+Look at a category with spending this month.
+
+**Expected:**
+- "Estimate at your current pace: ₦X by 31 Oct", in red if it would go over.
+- "About ₦Y a day for N days" when there's money left.
+- On days 1–6 of a month, no estimate is shown.
+
+### B8 — Unbudgeted spending
+**Expected:** "Spending not in the budget" lists categories without a line (and Uncategorised). The **Not in the budget** tile plus **Spent in those categories** equals the month's total spending on Home.
+
+### B9 — Next month, copy and carry-over
+1. Click **›** to go to November.
+2. Click **Copy October's budget**.
+3. Tick **Carry over unspent money from October**.
+
+**Expected:**
+- Step 2: the same categories and amounts appear.
+- Step 3: categories with money left in October show "(incl. ₦X carried over)". Overspent ones show nothing carried.
+
+### B10 — Delete, and categories
+1. Go to **Categories** and try to delete a category that is in a budget.
+2. Back in **Budgets**, use **Delete this budget** (November).
+
+**Expected:**
+- Step 1: a message says to remove it from the budget or archive it.
+- Step 2: an inline confirmation appears, then November shows "No budget" again. Your transactions are unchanged.
+
+### Reporting back
+Reply with one line, for example `B1 pass … B10 pass`, and add a screenshot for any failure.

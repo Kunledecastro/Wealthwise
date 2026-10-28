@@ -24,6 +24,7 @@ from app.auth.sessions import (
 from app.core.security import hash_identifier, verify_password
 from app.db.models import (
     Account,
+    Budget,
     Category,
     CategoryRule,
     Transaction,
@@ -161,6 +162,22 @@ def _export_payload(db: Session, auth: CurrentAuth) -> dict[str, Any]:
                 "active": r.is_active,
             }
             for r in db.scalars(select(CategoryRule).where(CategoryRule.user_id == u.id))
+        ],
+        "budgets": [
+            {
+                "month": b.month.isoformat(),
+                "currency": b.currency,
+                "rollover_enabled": b.rollover_enabled,
+                "alert_thresholds": b.alert_thresholds,
+                "lines": [
+                    {
+                        "category": cat_names.get(line.category_id) if line.category_id else None,
+                        "planned_minor": line.planned_minor,
+                    }
+                    for line in b.lines
+                ],
+            }
+            for b in db.scalars(select(Budget).where(Budget.user_id == u.id).order_by(Budget.month))
         ],
         "deleted_transaction_count": deleted_count,
         "revisions": revisions,

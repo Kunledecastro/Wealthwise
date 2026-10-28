@@ -121,3 +121,21 @@ export function compactMinor(minor: number): string {
   if (abs >= 1e3) return fmt(abs / 1e3, "k");
   return `${sign}₦${Math.round(abs)}`;
 }
+
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** "2026-10-01" → "October 2026" (or "Oct" with short=true and no year). */
+export function monthName(iso: string, opts: { short?: boolean; year?: boolean } = {}): string {
+  const [y, m] = parts(iso);
+  const name = opts.short ? MONTHS_SHORT[m - 1]! : MONTHS_LONG[m - 1]!;
+  return opts.year === false ? name : `${name} ${y}`;
+}
+
+/** Parse "70, 90, 100" into sorted unique whole percentages 1..200 (null if invalid). */
+export function parseThresholds(text: string): number[] | null {
+  const bits = text.split(/[,\s]+/).filter(Boolean);
+  if (bits.length < 1 || bits.length > 5) return null;
+  const nums = bits.map((b) => (/^\d{1,3}$/.test(b) ? Number(b) : NaN));
+  if (nums.some((n) => !Number.isInteger(n) || n < 1 || n > 200)) return null;
+  return [...new Set(nums)].sort((a, b) => a - b);
+}

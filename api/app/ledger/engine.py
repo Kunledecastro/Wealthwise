@@ -5,7 +5,7 @@ functions. Keeping this pure makes every rule unit-testable in isolation.
 """
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -410,3 +410,145 @@ def by_merchant(
             raise ValueError(f"unknown transaction kind {e.kind!r}")
         t.transaction_count += 1
     return out
+
+
+# ---------------- budgets (R19-R24) ----------------
+
+SUGGESTION_STEP = 100_000  # suggestions are rounded up to whole ₦1,000 (in kobo)
+PROJECTION_MIN_DAYS = 7
+
+
+def month_start_end(month: date) -> tuple[date, date]:
+    start = month.replace(day=1)
+    return start, start.replace(day=_month_len(start.year, start.month))
+
+
+def add_months(d: date, months: int) -> date:
+    return _add_months(d, months)
+
+
+def normalise_thresholds(values: Iterable[int]) -> tuple[int, ...]:
+    """R21: unique, ascending, each 1..200 %."""
+    out = sorted({int(v) for v in values})
+    if not out or out[0] < 1 or out[-1] > 200:
+        raise ValueError("thresholds must be between 1 and 200")
+    return tuple(out)
+
+
+def carry_over(available_minor: int, spent_minor: int) -> int:
+    """R22: only unspent money carries into next month; overspending never does."""
+    return max(0, available_minor - spent_minor)
+
+
+@dataclass(frozen=True, slots=True)
+class LineStatus:
+    planned_minor: int
+    rollover_minor: int
+    spent_minor: int
+    available_minor: int
+    remaining_minor: int  # negative = over budget
+    percent_used: int | None  # floor %, None when nothing is available
+    threshold_reached: int | None  # highest threshold reached, if any
+    over: bool
+    projected_minor: int | None  # month-end spending at the current pace (R23)
+    projected_over: bool
+    safe_per_day_minor: int | None  # what can still be spent per remaining day (R23)
+    days_left: int  # days remaining in the month including today (0 for past months)
+
+
+def budget_line_status(
+    *,
+    planned_minor: int,
+    rollover_minor: int,
+    spent_minor: int,
+    thresholds: Sequence[int],
+    month: date,
+    today: date,
+) -> LineStatus:
+    """R20-R23 for one budget line in one month.
+
+    `spent_minor` is the line's net spending for the month (R19). Day counts use the user's
+    own calendar date `today`."""
+    if planned_minor < 0 or rollover_minor < 0:
+        raise ValueError("planned and rollover amounts cannot be negative")
+    start, end = month_start_end(month)
+    days = (end - start).days + 1
+    if today < start:
+        elapsed, days_left = 0, days
+    elif today > end:
+        elapsed, days_left = days, 0
+    else:
+        elapsed, days_left = today.day, days - today.day + 1
+
+    available = planned_minor + rollover_minor
+    remaining = available - spent_minor
+    pct = None
+    reached = None
+    if available > 0:
+        pct = max(0, spent_minor) * 100 // available
+        hit = [t for t in thresholds if spent_minor * 100 >= t * available]
+        reached = max(hit) if hit else None
+    elif spent_minor > 0:
+        reached = max(thresholds) if thresholds else None
+
+    projected: int | None = None
+    if elapsed == days:  # month over, or its last day: nothing left to extrapolate
+        projected = spent_minor
+    elif elapsed >= PROJECTION_MIN_DAYS:
+        # Pace over the days so far, extended to the days after today.
+        projected = spent_minor + max(0, spent_minor) * (days - elapsed) // elapsed
+
+    safe = None
+    if days_left > 0:
+        safe = max(0, remaining) // days_left
+
+    return LineStatus(
+        planned_minor=planned_minor,
+        rollover_minor=rollover_minor,
+        spent_minor=spent_minor,
+        available_minor=available,
+        remaining_minor=remaining,
+        percent_used=pct,
+        threshold_reached=reached,
+        over=spent_minor > available,
+        projected_minor=projected,
+        projected_over=projected is not None and projected > available,
+        safe_per_day_minor=safe,
+        days_left=days_left,
+    )
+
+
+def month_spending(
+    entries: Iterable[Entry], month: date, currency: str = "NGN"
+) -> tuple[int, dict[int | None, int]]:
+    """R19: total net spending for the month and net spending per category (None =
+    uncategorised), using exactly the rules of summarize() and by_category()."""
+    start, end = month_start_end(month)
+    es = list(entries)
+    total = summarize(es, start, end).get(currency)
+    per_cat = {
+        cid: t.net_spending
+        for (cur, cid), t in by_category(es, start, end).items()
+        if cur == currency and (t.gross_spending or t.refunds)
+    }
+    return (total.net_spending if total else 0), per_cat
+
+
+@dataclass(frozen=True, slots=True)
+class Suggestion:
+    amount_minor: int
+    monthly_minor: tuple[int, ...]  # the figures it is based on, oldest first
+
+
+def suggest_budget(monthly_net_spending: Sequence[int]) -> Suggestion | None:
+    """R24: average monthly net spending over the given complete months (zeros included),
+    rounded up to whole ₦1,000. Only suggested when there was spending in at least two of
+    the months, so a one-off purchase never becomes a monthly budget."""
+    months = tuple(monthly_net_spending)
+    if sum(1 for m in months if m > 0) < 2:
+        return None
+    total = sum(months)
+    if total <= 0:
+        return None
+    avg_ceil = -(-total // len(months))
+    return Suggestion(-(-avg_ceil // SUGGESTION_STEP) * SUGGESTION_STEP, months)

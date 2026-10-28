@@ -666,3 +666,80 @@ class CategoryRule(TimestampMixin, Base):
         ),
         CheckConstraint("length(pattern) BETWEEN 2 AND 100", name="ck_rule_pattern_len"),
     )
+
+
+class Budget(TimestampMixin, Base):
+    """A monthly budget (Phase 6). Figures are always computed live by app.ledger.engine."""
+
+    __tablename__ = "budgets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    month: Mapped[date] = mapped_column(Date, nullable=False)  # always the 1st
+    currency: Mapped[str] = mapped_column(
+        String(3), ForeignKey("currencies.code"), nullable=False, server_default="NGN"
+    )
+    rollover_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    alert_thresholds: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
+
+    lines: Mapped[list["BudgetLine"]] = relationship(
+        back_populates="budget", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "month", "currency", name="uq_budgets_user_month"),
+        UniqueConstraint("user_id", "id", name="uq_budgets_user_id_id"),
+        CheckConstraint("extract(day from month) = 1", name="ck_budget_month_first"),
+        CheckConstraint(
+            "alert_thresholds IS NULL OR (cardinality(alert_thresholds) BETWEEN 1 AND 5 "
+            "AND 1 <= ALL(alert_thresholds) AND 200 >= ALL(alert_thresholds))",
+            name="ck_budget_thresholds",
+        ),
+    )
+
+
+class BudgetLine(TimestampMixin, Base):
+    """Planned spending for one category (NULL category = the overall limit)."""
+
+    __tablename__ = "budget_lines"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    budget_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    category_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    planned_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    budget: Mapped[Budget] = relationship(back_populates="lines")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "budget_id"],
+            ["budgets.user_id", "budgets.id"],
+            name="fk_budget_lines_budget_same_user",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "category_id"],
+            ["categories.user_id", "categories.id"],
+            name="fk_budget_lines_category_same_user",
+            ondelete="CASCADE",  # only reachable when the whole user is deleted
+        ),
+        Index(
+            "uq_budget_lines_budget_category",
+            "budget_id",
+            "category_id",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
+        CheckConstraint(
+            "planned_minor > 0 AND planned_minor <= 1000000000000000", name="ck_budget_line_amount"
+        ),
+    )

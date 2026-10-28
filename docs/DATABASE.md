@@ -88,8 +88,8 @@ Constraints: `UNIQUE (account_id, external_ref) WHERE external_ref IS NOT NULL`;
 - `category_rules`: user_id, match_field (merchant/narration), match_type (`equals`, `contains`, `regex` — regex length-limited), pattern, category_id, priority, created_from (`user_correction`, `manual`, `system`).
 
 ### budgets, goals, recurring, insights
-- `budgets`: period_type (`monthly`, `custom`), start/end, rollover_enabled, thresholds override.
-- `budget_lines`: budget, category (NULL = overall), planned_minor, rollover_in_minor.
+- `budgets` (built in Phase 6, migration 0005): user_id, month (always the 1st; unique per user, month and currency), currency (NGN), rollover_enabled, alert_thresholds (int[] 1–5 values in 1–200, NULL = use Settings). Custom periods are deferred (D-052).
+- `budget_lines`: user_id, budget_id (composite FK to the same user's budget, cascade), category_id (composite FK to the same user's category; NULL = overall limit, one per budget via a NULLS NOT DISTINCT unique index), planned_minor (1 to 10^15). Carry-over and spent are computed live, not stored (D-053).
 - `goals`: type (emergency, purchase, travel, education, debt, long_term, custom), target_minor, deadline, priority, status. `goal_contributions`: amount_minor, date, optional linked transaction.
 - `recurring_series`: merchant key, cadence (weekly/monthly/annual), typical_amount_minor, next_expected_date, confidence, confirmed_by_user.
 - `insights`: type, period_start/end, facts JSONB (supporting figures + transaction ids), is_verified_fact vs is_pattern, recommended_action, estimated_impact_minor, status (new/dismissed/acted).

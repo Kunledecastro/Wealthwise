@@ -98,3 +98,14 @@ Backend tests run against a real PostgreSQL database `wealthwise_test`, as the r
 | Chart palette | spending/income pair passes every check of the dataviz validator against #ffffff (light) and #161d1a (dark) |
 | Visual check | headless Chromium screenshots of Home, Reports and Print at 1280px and 390px, light and dark; print view rendered to a one-page A4 PDF |
 | Live run via web origin | after the sample import, October series, categories and merchants each summed to ₦126,056.94; CSV figures matched the screen |
+
+## Latest results (Phase 6, 28 Oct 2026)
+
+| Check | Result |
+|---|---|
+| pytest (all backend) | 431 passed |
+| Ledger engine branch coverage | 100% (incl. R19–R24; property tests that budget lines + unbudgeted = total spending and that line figures stay consistent for any amounts and dates) |
+| vitest | 16 passed (incl. month names and strict threshold parsing) |
+| eslint / tsc / next build | clean |
+| migrate-check incl. drift | OK (0005 up/down/up) |
+| Live UI flow (headless Chromium) | seeded Jul–Oct spending → 5 suggestions matching hand calculation (e.g. ₦62,000 · ₦71,500 · ₦58,000 → ₦64,000) → created from suggestions, added ₦150,000 overall limit, saved; screenshots at 1280px and 390px, light and dark; Home budget card |

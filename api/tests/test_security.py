@@ -83,6 +83,7 @@ def test_every_non_public_route_rejects_anonymous(api, method, path):
         "{batch_id}",
         "{category_id}",
         "{rule_id}",
+        "{budget_id}",
     ):
         url = url.replace(param, "00000000-0000-4000-8000-000000000000")
     assert "{" not in url, f"add a placeholder for {path}"

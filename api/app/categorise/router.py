@@ -14,6 +14,7 @@ from app.categorise.defaults import LOCKED_SLUGS
 from app.categorise.engine import Facts, Rule, norm_pattern, rule_matches, suggest_pattern
 from app.db.models import (
     Account,
+    BudgetLine,
     Category,
     CategoryRule,
     ImportRow,
@@ -350,6 +351,13 @@ def delete_category(
     )
     if used:
         raise unprocessable("This category has transactions. Archive it, or merge it into another.")
+    in_budget = db.scalar(
+        select(func.count()).select_from(BudgetLine).where(BudgetLine.category_id == c.id)
+    )
+    if in_budget:
+        raise unprocessable(
+            "This category is in a budget. Remove it from the budget first, or archive it."
+        )
     db.execute(
         update(ImportRow)
         .where(ImportRow.category_id == c.id)
@@ -366,6 +374,25 @@ def delete_category(
     db.delete(c)  # its rules are removed with it
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _merge_budget_lines(db: Session, user_id: int, src: int, dst: int) -> None:
+    """Budget lines follow a merged category. If a budget already has a line for the target,
+    the two planned amounts are added together."""
+    for line in db.scalars(
+        select(BudgetLine).where(BudgetLine.user_id == user_id, BudgetLine.category_id == src)
+    ).all():
+        target = db.scalar(
+            select(BudgetLine).where(
+                BudgetLine.budget_id == line.budget_id, BudgetLine.category_id == dst
+            )
+        )
+        if target is None:
+            line.category_id = dst
+        else:
+            target.planned_minor += line.planned_minor
+            db.delete(line)
+    db.flush()
 
 
 @router.post("/{category_id}/merge", response_model=CategoryOut)
@@ -404,6 +431,7 @@ def merge_category(
         .where(ImportRow.user_id == auth.user.id, ImportRow.category_id == src.id)
         .values(category_id=dst.id)
     )
+    _merge_budget_lines(db, auth.user.id, src.id, dst.id)
     audit(
         db,
         "category.merged",

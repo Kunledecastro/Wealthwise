@@ -612,3 +612,157 @@ def test_prop_previous_period_ends_before_and_is_valid(a, b):
     d0, d1 = min(a, b), max(a, b)
     p0, p1 = previous_period(d0, d1)
     assert p0 <= p1 < d0
+
+
+# ---------- R19-R24: budgets ----------
+
+from app.ledger.engine import (  # noqa: E402
+    add_months,
+    budget_line_status,
+    carry_over,
+    month_spending,
+    month_start_end,
+    normalise_thresholds,
+    suggest_budget,
+)
+
+OCT1 = date(2026, 10, 1)
+TH = (70, 90, 100)
+
+
+def st_line(planned, spent, today, rollover=0, month=OCT1, thresholds=TH):
+    return budget_line_status(
+        planned_minor=planned,
+        rollover_minor=rollover,
+        spent_minor=spent,
+        thresholds=thresholds,
+        month=month,
+        today=today,
+    )
+
+
+def test_r19_month_spending_matches_summary_and_categories():
+    def ec2(kind, direction, amount, cat, d=date(2026, 10, 5), status="posted"):
+        return Entry(kind, direction, amount, "NGN", status, d, 1, False, cat)
+
+    es = [
+        ec2("expense", "debit", 1000, 1),
+        ec2("refund", "credit", 200, 1),
+        ec2("expense", "debit", 500, None),
+        ec2("income", "credit", 9999, 7),
+        ec2("expense", "debit", 300, 2, d=date(2026, 9, 30)),
+        ec2("expense", "debit", 50, 2, status="pending"),
+        ec2("transfer", "debit", 777, 9),
+    ]
+    total, per = month_spending(es, date(2026, 10, 17))
+    assert total == 1300
+    assert per == {1: 800, None: 500}
+    assert month_spending([], OCT1) == (0, {})
+
+
+def test_r20_r21_status_thresholds_and_over():
+    s = st_line(100_000_00, 50_000_00, date(2026, 10, 10))
+    assert (s.available_minor, s.remaining_minor, s.percent_used) == (100_000_00, 50_000_00, 50)
+    assert s.threshold_reached is None and not s.over
+    assert st_line(1000, 700, date(2026, 10, 10)).threshold_reached == 70
+    assert st_line(1000, 699, date(2026, 10, 10)).threshold_reached is None
+    assert st_line(1000, 950, date(2026, 10, 10)).threshold_reached == 90
+    full = st_line(1000, 1000, date(2026, 10, 10))
+    assert full.threshold_reached == 100 and not full.over and full.remaining_minor == 0
+    over = st_line(1000, 1500, date(2026, 10, 10))
+    assert over.over and over.remaining_minor == -500 and over.percent_used == 150
+    refunded = st_line(1000, -200, date(2026, 10, 10))  # refunds exceeded spending
+    assert refunded.percent_used == 0 and refunded.remaining_minor == 1200
+
+
+def test_r21_zero_available():
+    nothing = st_line(0, 0, date(2026, 10, 10))
+    assert nothing.percent_used is None and nothing.threshold_reached is None
+    spent = st_line(0, 10, date(2026, 10, 10))
+    assert spent.over and spent.threshold_reached == 100
+    assert st_line(0, 10, date(2026, 10, 10), thresholds=()).threshold_reached is None
+
+
+def test_r21_normalise_thresholds():
+    assert normalise_thresholds([100, 70, 90, 70]) == (70, 90, 100)
+    for bad in ([], [0], [201]):
+        with pytest.raises(ValueError):
+            normalise_thresholds(bad)
+
+
+def test_r22_rollover_counts_and_carry_over():
+    s = st_line(1000, 300, date(2026, 10, 10), rollover=500)
+    assert s.available_minor == 1500 and s.remaining_minor == 1200
+    assert carry_over(1500, 300) == 1200
+    assert carry_over(1000, 1500) == 0  # overspending is never carried forward
+    with pytest.raises(ValueError):
+        st_line(-1, 0, date(2026, 10, 10))
+    with pytest.raises(ValueError):
+        st_line(1, 0, date(2026, 10, 10), rollover=-1)
+
+
+def test_r23_projection_and_safe_per_day():
+    early = st_line(31_000, 6_000, date(2026, 10, 6))
+    assert early.projected_minor is None  # too early to project
+    assert early.days_left == 26 and early.safe_per_day_minor == 25_000 // 26
+    day10 = st_line(31_000, 10_000, date(2026, 10, 10))
+    assert day10.projected_minor == 10_000 + 10_000 * 21 // 10  # 31_000
+    assert not day10.projected_over
+    fast = st_line(31_000, 20_000, date(2026, 10, 10))
+    assert fast.projected_over and fast.projected_minor == 62_000
+    over = st_line(1000, 2000, date(2026, 10, 10))
+    assert over.safe_per_day_minor == 0
+    last_day = st_line(1000, 400, date(2026, 10, 31))
+    assert last_day.days_left == 1 and last_day.safe_per_day_minor == 600
+    past = st_line(1000, 400, date(2026, 11, 3))
+    assert past.projected_minor == 400 and past.days_left == 0 and past.safe_per_day_minor is None
+    future = st_line(1000, 0, date(2026, 9, 20))
+    assert future.projected_minor is None and future.days_left == 31
+    assert future.safe_per_day_minor == 1000 // 31
+    negative = st_line(1000, -100, date(2026, 10, 10))
+    assert negative.projected_minor == -100
+
+
+def test_r24_suggestions():
+    s = suggest_budget([30_000_00, 45_000_50, 0])
+    assert s is not None
+    assert s.amount_minor == 26_000_00  # average ₦25,000.17 rounded up to whole ₦1,000
+    assert s.monthly_minor == (30_000_00, 45_000_50, 0)
+    assert suggest_budget([25_000_00, 25_000_00, 25_000_00]).amount_minor == 25_000_00
+    assert suggest_budget([0, 0, 90_000_00]) is None  # a one-off is not a monthly budget
+    assert suggest_budget([]) is None
+    assert suggest_budget([1_00, 1_00, -50_00]) is None  # refunds outweigh spending
+
+
+def test_month_helpers():
+    assert month_start_end(date(2026, 2, 14)) == (date(2026, 2, 1), date(2026, 2, 28))
+    assert add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)
+    assert add_months(date(2026, 1, 1), -1) == date(2025, 12, 1)
+
+
+@settings(max_examples=200)
+@given(st.lists(cat_entries(), max_size=40))
+def test_prop_budget_lines_plus_unbudgeted_equal_total(es):
+    total, per = month_spending(es, date(2026, 6, 1))
+    budgeted = {1, 2}
+    lines = sum(v for k, v in per.items() if k in budgeted)
+    unbudgeted = sum(v for k, v in per.items() if k not in budgeted)
+    assert lines + unbudgeted == total
+
+
+@settings(max_examples=300)
+@given(
+    st.integers(0, 10**9),
+    st.integers(0, 10**9),
+    st.integers(-(10**9), 10**9),
+    st.dates(min_value=date(2026, 9, 1), max_value=date(2026, 11, 30)),
+)
+def test_prop_line_status_invariants(planned, rollover, spent, today):
+    s = st_line(planned, spent, today, rollover=rollover)
+    assert s.available_minor == planned + rollover
+    assert s.remaining_minor == s.available_minor - spent
+    assert s.over == (spent > s.available_minor)
+    if s.safe_per_day_minor is not None:
+        assert 0 <= s.safe_per_day_minor * s.days_left <= max(0, s.remaining_minor)
+    if s.projected_minor is not None:
+        assert s.projected_minor >= spent or spent < 0
