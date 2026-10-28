@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     default_currency: str = "NGN"
     default_timezone: str = "Africa/Lagos"
     demo_mode: bool = False
+    upload_max_mb: int = Field(default=10, ge=1, le=50)
 
     database_url: str = "postgresql+psycopg://wealthwise_app:devpass@localhost:5432/wealthwise"
     migrator_database_url: str = (

@@ -6,25 +6,32 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record as audit
 from app.auth.sessions import CurrentAuth, client_ip, require_auth
-from app.db.models import Account, Currency, Transaction
+from app.db.models import Account, Currency, ReconciliationPoint, Transaction
 from app.db.session import get_db
-from app.finance.schemas import AccountIn, AccountOut, AccountPatch
+from app.finance.schemas import (
+    AccountIn,
+    AccountOut,
+    AccountPatch,
+    ReconcileIn,
+    ReconciliationOut,
+)
 from app.finance.service import (
     account_out,
     balances_for,
     blank_to_none,
     get_account,
+    live_entries,
     today_for,
     unprocessable,
 )
+from app.ledger.engine import reconcile
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
 def _out(db: Session, auth: CurrentAuth, a: Account) -> AccountOut:
     today = today_for(auth.user)
-    bal, count = balances_for(db, auth.user.id, [a])[a.id]
-    return account_out(a, bal, count, today)
+    return account_out(a, *balances_for(db, auth.user.id, [a])[a.id], today)
 
 
 @router.get("", response_model=list[AccountOut])
@@ -161,3 +168,101 @@ def delete_account(
     db.delete(a)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------- reconciliation ----------------
+
+
+@router.post(
+    "/{account_id}/reconcile",
+    response_model=ReconciliationOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def reconcile_account(
+    account_id: uuid.UUID,
+    body: ReconcileIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> ReconciliationOut:
+    """Record the balance your bank shows on a date, and compare it with ours (RULES B5)."""
+    a = get_account(db, auth.user.id, account_id)
+    if body.as_of_date > today_for(auth.user):
+        raise unprocessable("The statement date cannot be in the future.")
+    if body.as_of_date < a.opening_balance_date:
+        raise unprocessable(
+            "That date is before this account's starting balance date, so there's nothing "
+            "to compare. Change the starting balance date first."
+        )
+    entries = live_entries(db, auth.user.id, [a.id])[a.id]
+    rec = reconcile(
+        currency=a.currency,
+        opening_minor=a.opening_balance_minor,
+        opening_date=a.opening_balance_date,
+        entries=entries,
+        as_of=body.as_of_date,
+        statement_minor=body.statement_balance_minor,
+    )
+    p = ReconciliationPoint(
+        user_id=auth.user.id,
+        account_id=a.id,
+        as_of_date=body.as_of_date,
+        statement_balance_minor=body.statement_balance_minor,
+        computed_balance_minor=rec.computed_minor,
+        source="manual",
+    )
+    db.add(p)
+    db.flush()
+    audit(
+        db,
+        "account.reconciled",
+        user_id=auth.user.id,
+        ip=client_ip(request),
+        target_type="account",
+        target_id=str(a.public_id),
+        details={"matches": rec.matches},
+    )
+    db.commit()
+    db.refresh(p)
+    return _point_out(p, rec.computed_minor)
+
+
+@router.get("/{account_id}/reconciliations", response_model=list[ReconciliationOut])
+def list_reconciliations(
+    account_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> list[ReconciliationOut]:
+    a = get_account(db, auth.user.id, account_id)
+    entries = live_entries(db, auth.user.id, [a.id])[a.id]
+    points = db.scalars(
+        select(ReconciliationPoint)
+        .where(ReconciliationPoint.user_id == auth.user.id, ReconciliationPoint.account_id == a.id)
+        .order_by(ReconciliationPoint.as_of_date.desc(), ReconciliationPoint.id.desc())
+        .limit(50)
+    ).all()
+    out = []
+    for p in points:
+        now = reconcile(
+            currency=a.currency,
+            opening_minor=a.opening_balance_minor,
+            opening_date=a.opening_balance_date,
+            entries=entries,
+            as_of=p.as_of_date,
+            statement_minor=p.statement_balance_minor,
+        )
+        out.append(_point_out(p, now.computed_minor))
+    return out
+
+
+def _point_out(p: ReconciliationPoint, computed_now: int) -> ReconciliationOut:
+    return ReconciliationOut(
+        id=p.public_id,
+        as_of_date=p.as_of_date,
+        statement_balance_minor=p.statement_balance_minor,
+        computed_balance_minor_then=p.computed_balance_minor,
+        computed_balance_minor_now=computed_now,
+        difference_minor_now=p.statement_balance_minor - computed_now,
+        source=p.source,
+        created_at=p.created_at,
+    )

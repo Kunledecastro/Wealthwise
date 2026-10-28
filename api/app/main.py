@@ -14,6 +14,7 @@ from app.db.session import get_engine
 from app.finance.accounts import router as accounts_router
 from app.finance.summary import router as summary_router
 from app.finance.transactions import router as transactions_router
+from app.ingestion.router import router as imports_router
 from app.users.data import router as me_data_router
 from app.users.router import router as me_router
 
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(accounts_router)
     app.include_router(transactions_router)
     app.include_router(summary_router)
+    app.include_router(imports_router)
     app.include_router(admin_router)
     return app
 

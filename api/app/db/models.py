@@ -218,7 +218,7 @@ ACCOUNT_TYPES = ("bank", "wallet", "cash", "savings", "card", "loan")
 ACCOUNT_SOURCES = ("manual", "imported", "simulated", "connected")
 TXN_KINDS = ("income", "expense", "fee", "refund", "transfer", "reversal", "adjustment")
 TXN_STATUSES = ("pending", "posted", "failed", "reversed")
-TXN_SOURCES = ("manual", "csv", "xlsx", "pdf", "simulated", "email", "open_banking")
+TXN_SOURCES = ("manual", "csv", "xlsx", "xls", "pdf", "simulated", "email", "open_banking")
 MAX_MINOR = 10**15  # ₦10 trillion in kobo; well inside JSON's safe-integer range
 
 
@@ -291,6 +291,11 @@ class Transaction(TimestampMixin, Base):
     )
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    import_batch_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("import_batches.id", ondelete="SET NULL", name="fk_transactions_import_batch"),
+        index=True,
+    )
 
     __table_args__ = (
         # The account must belong to the same user as the transaction.
@@ -368,4 +373,173 @@ class TransactionRevision(Base):
         CheckConstraint(
             "action IN ('create', 'update', 'delete', 'reverse')", name="ck_rev_action"
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: statement import and reconciliation
+# ---------------------------------------------------------------------------
+
+IMPORT_ADAPTERS = ("csv", "xlsx", "xls", "simulated")
+IMPORT_STATUSES = ("staged", "committed", "discarded", "undone")
+ROW_OUTCOMES = ("new", "duplicate", "possible_duplicate", "error", "skipped")
+
+
+class ImportProfile(TimestampMixin, Base):
+    """Remembered column mapping for an account, keyed by the file's header signature."""
+
+    __tablename__ = "import_profiles"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    header_signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    mapping: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "account_id"],
+            ["accounts.user_id", "accounts.id"],
+            name="fk_import_profiles_account_same_user",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("account_id", "header_signature", name="uq_import_profile_sig"),
+    )
+
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    adapter: Mapped[str] = mapped_column(String(16), nullable=False)
+    filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    sheet_name: Mapped[str | None] = mapped_column(String(100))
+    file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, server_default="staged")
+    # Raw cell grid, kept only while staged so the column mapping can be changed.
+    # Cleared on commit or discard (the original file itself is never stored).
+    grid: Mapped[list[list[str]] | None] = mapped_column(JSONB(none_as_null=True))
+    header_signature: Mapped[str | None] = mapped_column(String(64))
+    mapping: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    counts: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    statement_closing_balance_minor: Mapped[int | None] = mapped_column(BigInteger)
+    statement_opening_balance_minor: Mapped[int | None] = mapped_column(BigInteger)
+    statement_first_date: Mapped[date | None] = mapped_column(Date)
+    statement_last_date: Mapped[date | None] = mapped_column(Date)
+    # What commit changed outside its own new rows, so undo can put it back exactly.
+    side_effects: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "account_id"],
+            ["accounts.user_id", "accounts.id"],
+            name="fk_import_batches_account_same_user",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(_in("adapter", IMPORT_ADAPTERS), name="ck_import_adapter"),
+        CheckConstraint(_in("status", IMPORT_STATUSES), name="ck_import_status"),
+    )
+
+
+class ImportRow(Base):
+    __tablename__ = "import_rows"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    batch_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("import_batches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-based, as in the file
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    include: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error: Mapped[str | None] = mapped_column(String(300))
+    note: Mapped[str | None] = mapped_column(String(300))
+    transaction_date: Mapped[date | None] = mapped_column(Date)
+    posting_date: Mapped[date | None] = mapped_column(Date)
+    direction: Mapped[str | None] = mapped_column(String(6))
+    amount_minor: Mapped[int | None] = mapped_column(BigInteger)
+    narration: Mapped[str | None] = mapped_column(String(500))
+    external_ref: Mapped[str | None] = mapped_column(String(128))
+    balance_after_minor: Mapped[int | None] = mapped_column(BigInteger)
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    suggested_kind: Mapped[str | None] = mapped_column(String(16))
+    kind: Mapped[str | None] = mapped_column(String(16))
+    duplicate_of_transaction_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("transactions.id", ondelete="SET NULL")
+    )
+    transfer_match_transaction_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("transactions.id", ondelete="SET NULL")
+    )
+    reversal_of_transaction_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("transactions.id", ondelete="SET NULL")
+    )
+    reversal_of_row_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("import_rows.id", ondelete="SET NULL")
+    )
+    transaction_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("transactions.id", ondelete="SET NULL")
+    )
+
+    __table_args__ = (
+        CheckConstraint(_in("outcome", ROW_OUTCOMES), name="ck_import_row_outcome"),
+        Index("ix_import_rows_batch_row", "batch_id", "row_number"),
+    )
+
+
+class ReconciliationPoint(Base):
+    __tablename__ = "reconciliation_points"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    statement_balance_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    computed_balance_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    import_batch_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("import_batches.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "account_id"],
+            ["accounts.user_id", "accounts.id"],
+            name="fk_recon_account_same_user",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("source IN ('statement', 'manual')", name="ck_recon_source"),
+        CheckConstraint(
+            f"abs(statement_balance_minor) <= {MAX_MINOR}", name="ck_recon_statement_range"
+        ),
+        Index("ix_recon_account_date", "account_id", "as_of_date"),
     )

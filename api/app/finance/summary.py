@@ -71,6 +71,7 @@ def summary(
         timezone=auth.user.preferences.timezone,
         summaries=[CurrencySummaryOut(**s.as_dict()) for s in sums.values()],
         accounts=[account_out(a, *bals[a.id], today) for a in accounts],
-        balance_totals=total_balances(b for b, _ in bals.values()),
-        balances_are_estimated=True,
+        balance_totals=total_balances(b for b, *_ in bals.values()),
+        balances_are_estimated=not bals
+        or any(r is None or not r.matches for _, _, r in bals.values()),
     )

@@ -39,7 +39,8 @@ from app.db.session import get_sessionmaker  # noqa: E402
 PASSWORD = "Correct-Horse-7-Battery"
 TABLES = (
     "users, user_preferences, sessions, password_reset_tokens, invites, auth_attempts, "
-    "accounts, transactions, transaction_revisions"
+    "accounts, transactions, transaction_revisions, import_batches, import_rows, "
+    "import_profiles, reconciliation_points"
 )
 
 
@@ -82,6 +83,11 @@ class Api:
 
     def patch(self, url: str, json: Any = None) -> Any:
         return self.client.patch(url, json=json, headers=self._hdr())
+
+    def upload(self, url: str, data: dict[str, str], name: str, content: bytes) -> Any:
+        return self.client.post(
+            url, data=data, files={"file": (name, content)}, headers=self._hdr()
+        )
 
     def get(self, url: str) -> Any:
         return self.client.get(url)

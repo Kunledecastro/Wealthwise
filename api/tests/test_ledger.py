@@ -301,3 +301,45 @@ def test_prop_period_split_adds_up(es, d1, d2):
     right = summarize(es, date_from=lo + timedelta(days=1), date_to=date(2026, 12, 31)).get("NGN")
     tot = (left.net_cash_flow if left else 0) + (right.net_cash_flow if right else 0)
     assert tot == (whole.net_cash_flow if whole else 0)
+
+
+# ---------- B5 reconciliation ----------
+
+
+def test_b5_reconcile_matches_and_breaks_after_old_edit():
+    from app.ledger.engine import reconcile
+
+    entries = [
+        e("income", "credit", 1000, d=D),
+        e("expense", "debit", 300, d=D + timedelta(days=1)),
+    ]
+    r = reconcile(
+        currency="NGN",
+        opening_minor=500,
+        opening_date=D,
+        entries=entries,
+        as_of=D + timedelta(days=1),
+        statement_minor=1200,
+    )
+    assert r.matches and r.difference_minor == 0
+    # a later transaction doesn't affect a statement balance dated earlier
+    later = [*entries, e("expense", "debit", 99, d=D + timedelta(days=5))]
+    assert reconcile(
+        currency="NGN",
+        opening_minor=500,
+        opening_date=D,
+        entries=later,
+        as_of=D + timedelta(days=1),
+        statement_minor=1200,
+    ).matches
+    # editing an older transaction does
+    edited = [e("income", "credit", 900, d=D), entries[1]]
+    r2 = reconcile(
+        currency="NGN",
+        opening_minor=500,
+        opening_date=D,
+        entries=edited,
+        as_of=D + timedelta(days=1),
+        statement_minor=1200,
+    )
+    assert not r2.matches and r2.difference_minor == 100

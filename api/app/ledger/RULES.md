@@ -30,4 +30,5 @@ Each rule below has at least one test in `tests/test_ledger.py`.
 | B1 | Balance = opening balance + posted credits − posted debits, for transactions dated **on or after** the opening-balance date. Earlier transactions are assumed already included in the opening balance (they still appear in reports). |
 | B2 | All posted kinds except reversal pairs move the balance: income, expense, fee, refund, transfer legs, adjustments. |
 | B3 | Available incl. pending = balance + pending credits − pending debits (same date rule). |
-| B4 | Manual accounts are always labelled **estimated** until reconciliation against a statement exists (Phase 3). |
+| B4 | An account with no statement balance on record is labelled **estimated**. |
+| B5 | Reconciliation compares the latest recorded statement balance (from an imported statement's closing balance, or typed in by hand) with the balance computed **now** for that same date. Equal → **matches statement**; otherwise → **differs by ₦X**. Because it is recomputed every time, a later edit to an older transaction correctly breaks the match. Statement balances from an import that was undone are ignored. |

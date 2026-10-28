@@ -7,16 +7,23 @@ account or transaction without naming its owner (docs/SECURITY.md, authorisation
 import uuid
 from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, Transaction, TransactionRevision, User
+from app.db.models import (
+    Account,
+    ImportBatch,
+    ReconciliationPoint,
+    Transaction,
+    TransactionRevision,
+    User,
+)
 from app.finance.schemas import AccountOut, BalanceOut, TransactionOut
-from app.ledger.engine import Balance, Entry, account_balance
+from app.ledger.engine import Balance, Entry, Reconciliation, account_balance, reconcile
 
 
 def not_found(what: str) -> HTTPException:
@@ -98,38 +105,86 @@ def to_entry(t: Transaction) -> Entry:
     )
 
 
-def balances_for(
-    db: Session, user_id: int, accounts: Sequence[Account], as_of: date | None = None
-) -> dict[int, tuple[Balance, int]]:
-    """Balance and live transaction count per account, computed by the ledger engine."""
-    ids = [a.id for a in accounts]
-    by_acct: dict[int, list[Entry]] = {i: [] for i in ids}
-    if ids:
+def latest_points(
+    db: Session, user_id: int, account_ids: Sequence[int]
+) -> dict[int, ReconciliationPoint]:
+    """Most recent statement balance per account, ignoring ones from undone imports."""
+    if not account_ids:
+        return {}
+    rows = db.scalars(
+        select(ReconciliationPoint)
+        .outerjoin(ImportBatch, ImportBatch.id == ReconciliationPoint.import_batch_id)
+        .where(
+            ReconciliationPoint.user_id == user_id,
+            ReconciliationPoint.account_id.in_(account_ids),
+            (ReconciliationPoint.import_batch_id.is_(None)) | (ImportBatch.status != "undone"),
+        )
+        .order_by(
+            ReconciliationPoint.account_id,
+            ReconciliationPoint.as_of_date.desc(),
+            ReconciliationPoint.id.desc(),
+        )
+    )
+    out: dict[int, ReconciliationPoint] = {}
+    for p in rows:
+        out.setdefault(p.account_id, p)
+    return out
+
+
+def live_entries(db: Session, user_id: int, account_ids: Sequence[int]) -> dict[int, list[Entry]]:
+    by_acct: dict[int, list[Entry]] = {i: [] for i in account_ids}
+    if account_ids:
         rows = db.scalars(
             select(Transaction).where(
                 Transaction.user_id == user_id,
-                Transaction.account_id.in_(ids),
+                Transaction.account_id.in_(account_ids),
                 Transaction.deleted_at.is_(None),
             )
         )
         for t in rows:
             by_acct[t.account_id].append(to_entry(t))
-    return {
-        a.id: (
-            account_balance(
+    return by_acct
+
+
+def balances_for(
+    db: Session, user_id: int, accounts: Sequence[Account], as_of: date | None = None
+) -> dict[int, tuple[Balance, int, Reconciliation | None]]:
+    """Balance, live transaction count and reconciliation per account (ledger engine)."""
+    ids = [a.id for a in accounts]
+    by_acct = live_entries(db, user_id, ids)
+    points = latest_points(db, user_id, ids)
+    out: dict[int, tuple[Balance, int, Reconciliation | None]] = {}
+    for a in accounts:
+        p = points.get(a.id)
+        rec = (
+            reconcile(
                 currency=a.currency,
                 opening_minor=a.opening_balance_minor,
                 opening_date=a.opening_balance_date,
                 entries=by_acct[a.id],
-                as_of=as_of,
-            ),
-            len(by_acct[a.id]),
+                as_of=p.as_of_date,
+                statement_minor=p.statement_balance_minor,
+            )
+            if p
+            else None
         )
-        for a in accounts
-    }
+        bal = account_balance(
+            currency=a.currency,
+            opening_minor=a.opening_balance_minor,
+            opening_date=a.opening_balance_date,
+            entries=by_acct[a.id],
+            as_of=as_of,
+        )
+        out[a.id] = (bal, len(by_acct[a.id]), rec)
+    return out
 
 
-def account_out(a: Account, bal: Balance, count: int, as_of: date) -> AccountOut:
+def account_out(
+    a: Account, bal: Balance, count: int, rec: Reconciliation | None, as_of: date
+) -> AccountOut:
+    status: Literal["estimated", "reconciled", "unreconciled"] = (
+        "estimated" if rec is None else "reconciled" if rec.matches else "unreconciled"
+    )
     return AccountOut(
         id=a.public_id,
         type=a.type,
@@ -148,9 +203,11 @@ def account_out(a: Account, bal: Balance, count: int, as_of: date) -> AccountOut
             pending_in=bal.pending_in,
             pending_out=bal.pending_out,
             available_incl_pending=bal.available_incl_pending,
-            # B4: manual accounts are estimates until statement reconciliation exists.
-            status="estimated",
+            status=status,  # B4, B5
             as_of=as_of,
+            statement_as_of=rec.as_of if rec else None,
+            statement_balance_minor=rec.statement_minor if rec else None,
+            difference_minor=rec.difference_minor if rec else None,
         ),
     )
 

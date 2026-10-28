@@ -168,3 +168,39 @@ def total_balances(balances: Iterable[Balance]) -> dict[str, int]:
     for b in balances:
         out[b.currency] += b.posted_minor
     return dict(out)
+
+
+@dataclass(frozen=True, slots=True)
+class Reconciliation:
+    as_of: date
+    statement_minor: int
+    computed_minor: int  # balance computed *now* for that date (B5)
+
+    @property
+    def difference_minor(self) -> int:
+        return self.statement_minor - self.computed_minor
+
+    @property
+    def matches(self) -> bool:
+        return self.difference_minor == 0
+
+
+def reconcile(
+    *,
+    currency: str,
+    opening_minor: int,
+    opening_date: date,
+    entries: Iterable[Entry],
+    as_of: date,
+    statement_minor: int,
+) -> Reconciliation:
+    """B5: compare a statement balance with our balance on the same date. Recomputed every
+    time, so editing an old transaction afterwards correctly breaks the match."""
+    computed = account_balance(
+        currency=currency,
+        opening_minor=opening_minor,
+        opening_date=opening_date,
+        entries=entries,
+        as_of=as_of,
+    ).posted_minor
+    return Reconciliation(as_of=as_of, statement_minor=statement_minor, computed_minor=computed)

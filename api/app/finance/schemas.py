@@ -58,8 +58,11 @@ class BalanceOut(BaseModel):
     pending_in: int
     pending_out: int
     available_incl_pending: int
-    status: Literal["estimated", "reconciled", "stale"]
+    status: Literal["estimated", "reconciled", "unreconciled"]
     as_of: date
+    statement_as_of: date | None = None
+    statement_balance_minor: int | None = None
+    difference_minor: int | None = None
 
 
 class AccountOut(BaseModel):
@@ -223,3 +226,19 @@ class SummaryOut(BaseModel):
     accounts: list[AccountOut]
     balance_totals: dict[str, int]
     balances_are_estimated: bool
+
+
+class ReconcileIn(Strict):
+    as_of_date: date
+    statement_balance_minor: int = Field(ge=-MAX_MINOR, le=MAX_MINOR, strict=True)
+
+
+class ReconciliationOut(BaseModel):
+    id: uuid.UUID
+    as_of_date: date
+    statement_balance_minor: int
+    computed_balance_minor_then: int
+    computed_balance_minor_now: int
+    difference_minor_now: int
+    source: str
+    created_at: datetime
