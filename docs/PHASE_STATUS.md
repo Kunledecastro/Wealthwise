@@ -4,8 +4,8 @@
 |---|---|---|
 | 0 | Discovery, architecture, data model, security design, dependencies, acceptance criteria | **Approved** (26 Oct 2026) |
 | 1 | Repo scaffold, Docker Compose, CI, FastAPI + Next.js skeleton, Postgres + Alembic, **authentication & user preferences** | **Accepted** (26 Oct 2026) |
-| 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export, account deletion, email change | **Complete — awaiting your manual checks** (26 Oct 2026) |
-| 3 | Ingestion framework + CSV/XLSX adapter, dedupe, import review screen, simulated bank events | Not started |
+| 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export, account deletion, email change | **Accepted** (28 Oct 2026, manual checks not reported) |
+| 3 | Ingestion framework + CSV/XLSX/XLS adapters, dedupe, import review screen, transfer & reversal matching, reconciliation, undo, simulated bank events | **Complete — awaiting your manual checks** (28 Oct 2026) |
 | 4 | Categories, rules engine, review queue, learn-from-correction | Not started |
 | 5 | Dashboard and reports (CSV export, printable summary) | Not started |
 | 6 | Budgets, thresholds, projections, suggested budgets | Not started |
@@ -241,3 +241,67 @@ The new tables are added automatically by `migrate`. Your existing login is kept
 - Duplicate detection, so re-importing the same file adds nothing.
 - Simulated bank events for testing.
 - Reconciling a computed balance against the statement balance.
+
+---
+
+## Phase 3 — report (28 Oct 2026)
+
+**Objective:** bring transactions in from bank statement files safely and accurately, never double counting, and show whether each account's balance agrees with the bank.
+
+### What was built
+
+- **Ingestion pipeline** (`api/app/ingestion/`):
+  - Readers for CSV (any common delimiter, UTF-8 or Windows encoding), .xlsx and .xls, with size, row and zip-bomb limits.
+  - Exact date and amount parsing (no floating point). Dates use DMY by default with automatic detection; amounts handle ₦, commas, brackets and DR/CR suffixes.
+  - Header-row detection under preamble lines, plus column-role guessing.
+  - Normalisation into one schema, with masking of account and card numbers and kind suggestions (bank fees, refunds, reversals).
+  - A running-balance check that detects swapped columns.
+- **Duplicates:** an exact fingerprint (with an occurrence index so identical twin charges are both kept), references used only when unique within the file, and possible duplicates against manual entries.
+- **Matching:** own-account transfers within 2 days, and reversals linked to their original (same file or already saved). An unmatched reversal is saved as a refund.
+- **Commit** is one database transaction. It can set the starting balance from the statement, records the statement's closing balance and remembers the column layout per account. **Undo** removes everything an import added and restores what it changed, including transfer partners in other accounts.
+- **Reconciliation** (ledger rule B5): accounts show *Matches statement*, *Differs by ₦X* or *Estimated*. You can also check a balance by hand against your banking app, with a history of checks.
+- **Simulated bank events** in demo mode only.
+- **Screens:**
+  - Imports list and upload.
+  - Review: filter tabs, include/skip, type changes, a column editor with a preview of the file.
+  - Result panel with the balance check.
+  - Accounts: badges, "Import statement" and "Check against bank".
+- **Ops:** new settings `DEMO_MODE` and `UPLOAD_MAX_MB`; synthetic sample statements in `docs/samples/`; CI imports a sample through the running Docker stack.
+
+### Acceptance criteria
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Upload CSV / XLSX / XLS with limits; original not kept | Pass | 5 layouts tested; size → 413, rows, zip, HTML and PDF rejections tested; `grid` cleared (test) |
+| 2 | Columns detected; correctable; remembered per account | Pass | `test_role_for`, `test_remap_columns`, `test_mapping_is_remembered_per_account` |
+| 3 | Review before saving; rows marked new / duplicate / possible duplicate / problem | Pass | `test_upload_detects_columns_and_stages_rows` (nothing saved before commit) |
+| 4 | Re-importing adds nothing; twins kept | Pass | `test_reimporting_same_file_adds_nothing` (incl. the same statement as .xlsx), `test_genuine_identical_twins_both_kept` |
+| 5 | Fees, refunds and reversals suggested; reversals linked | Pass | `test_suggest_kind`, `test_commit_creates_transactions_links_reversal_and_reconciles`, `test_reversal_of_existing_manual_transaction` |
+| 6 | Own-account transfers matched, not counted twice | Pass | `test_transfer_matched_across_accounts_not_counted_twice` |
+| 7 | Statement balance compared; matches / differs shown; manual checks | Pass | B5 ledger test, `test_manual_reconcile` (an old edit breaks the match), live run |
+| 8 | Undo restores everything | Pass | `test_undo_removes_everything_and_allows_reimport`, `test_undo_restores_manual_transaction_converted_to_transfer` |
+| 9 | Simulated events only in demo mode, labelled | Pass | `test_simulate_requires_demo_mode`, `test_simulated_events_flow` |
+| 10 | Isolation, security, CI | Pass | `test_users_cannot_touch_each_others_imports`, anonymous-401 sweep covers all new routes; 286 tests |
+
+### Bugs found and fixed during the phase
+
+1. "Clearing" the staged grid saved a JSON `null` rather than an empty database field. Fixed, and covered by tests.
+2. A remembered column layout wasn't reused when the headers were unrecognisable on their own. Saved layouts are now matched on any of the first 40 rows.
+3. Undo wrote a duplicate entry in the history of a transaction it restored. A missing flush; fixed.
+4. Through the local web server, uploads over 10 MB were cut off and showed "Internal Server Error". The proxy limit is now raised, so the API's clear "file is larger than 10 MB" message gets through.
+
+### Upgrading your running copy
+
+```
+git pull
+docker compose up --build -d
+```
+Migration 0003 runs automatically. The new settings are optional: `DEMO_MODE` defaults to false and `UPLOAD_MAX_MB` to 10.
+
+### Known limitations
+
+- **Formats are inferred, not verified against real bank exports.** I had no real statements from Nigerian banks. If a file isn't detected, choose the columns once and they're remembered. Sharing a redacted export lets me add an exact preset.
+- PDF statements are still Phase 11. Many Nigerian banks email PDFs; download the CSV or Excel version where the bank offers one.
+- If rows within the same day appear in an unusual order, the running-balance check may not use the closing balance. The import still works; only the automatic balance check is skipped, with a warning.
+- Transfer matching needs both sides within 2 days and the exact same amount. A transfer whose fee is included in the amount won't match automatically; change the type in review instead.
+- Demo transactions count in totals while they exist. Undo the simulated import to remove them.

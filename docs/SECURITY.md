@@ -94,3 +94,18 @@ To be verified with a qualified Nigerian lawyer/compliance adviser — listed so
 | Non-root containers | Implemented |
 | TLS via Caddy | Configured, not yet exercised |
 | Encryption at rest, encrypted backups, RLS, nonce CSP, container scanning | Planned (hardening phase) |
+
+## 7. Implementation status (Phase 3: statement import)
+
+| Control | Status |
+|---|---|
+| Upload size limit (`UPLOAD_MAX_MB`, default 10, max 50), row limit 20,000, column limit 60, cell length 500 | Implemented |
+| File type detected from content; .xlsx zip-bomb guard (150 MB uncompressed); XML parsed via defusedxml; hidden sheets ignored | Implemented |
+| Uploaded file never stored; staged cell grid cleared on commit, cancel or after 24 h | Implemented |
+| NUBAN (10-digit) and Luhn-valid card numbers masked in saved narrations | Implemented (the staged grid keeps them for at most 24 h) |
+| Upload rate limit (60/hour per user) and at most 10 imports waiting for review | Implemented |
+| Imports, rows, profiles and reconciliation points owner-scoped (composite same-user foreign keys); isolation tests | Implemented |
+| Reconciliation points insert-only for the app role | Implemented |
+| Every import action audited (uploaded, committed, discarded, undone, simulated) | Implemented |
+| Raw file contents never logged | Implemented (log grep in tests and manual run) |
+

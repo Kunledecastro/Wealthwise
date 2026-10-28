@@ -1,6 +1,7 @@
 # Manual tests
 
-- [Phase 2](#phase-2) (current)
+- [Phase 3](#phase-3) (current)
+- [Phase 2](#phase-2)
 - [Phase 1](#phase-1) (passed 26 Oct 2026)
 
 ---
@@ -254,3 +255,115 @@ docker compose ps -a
 
 ### Reporting back
 Reply in one line, for example `N1 pass … N7 fail: …`, with a screenshot for any failure.
+
+
+---
+
+## Phase 3
+
+Time needed: about 30 minutes. The test files are in your Wealthwise folder under **docs\samples**. They contain made-up data.
+
+### 0. Update and restart
+```
+cd C:\Users\AdekunleOludele\Wealthwise
+git pull
+docker compose up --build -d
+docker compose ps -a
+```
+**Expected:** `migrate` shows Exited (0) and the others are healthy. The top bar now includes **Imports**.
+
+### S1 — Import a statement (with a deliberate mistake)
+1. **Accounts → Add account**: name `GT test`, type Bank, starting balance `0`, as of **30 Sep 2026**.
+2. **Imports → Import statement**: account GT test, file `docs\samples\sample-gtbank-style-statement.csv` → **Upload and review**.
+3. Look at the review. **Don't** tick "Set the account's starting balance from this statement". Click **Import 9**.
+
+**Expected in step 3, before importing:**
+- **9 New** and nothing else.
+- "SMS ALERT CHARGES" and "VAT ON CHARGES" are typed as **Bank fee**.
+- "REVERSAL WEB PURCHASE NETFLIX" is typed as **Reversal**, with a note that it reverses another row.
+- Both "POS PURCHASE BOLT" rows are present.
+- Narrations show `••••••6789` and `••••7895` instead of full account and card numbers.
+
+**Expected after importing:** an amber box saying the statement says **₦423,943.06** but Wealthwise calculates **₦323,943.06** (difference **₦100,000.00**).
+
+### S2 — Fix the starting balance → it matches
+1. **Accounts → GT test → Edit**: starting balance `100,000`, keep 30 Sep 2026. Save.
+
+**Expected:** GT test shows **₦423,943.06** with a green **✓ Matches statement · 6 Oct** badge.
+
+### S3 — Re-importing adds nothing
+1. Import the **same CSV** into GT test again.
+2. Import `sample-wallet-statement.xlsx` (the same transactions as Excel) into GT test.
+
+**Expected:** both show **9 Already imported**, **0 selected**, and the Import button is disabled. The CSV also shows "You already imported this exact file on …". Click **Cancel import** both times.
+
+### S4 — Transfer between your accounts
+1. Add account `Kuda test` (Wallet, starting `0`, as of 30 Sep 2026).
+2. Import `sample-kuda-transfer-in.csv` into Kuda test.
+
+**Expected:**
+- "TRF FROM GTB JOHN DOE" is typed **Transfer between my accounts**, with the note "Matches money to GT test on 3 Oct…".
+- After **Import 2**: "matched 1 transfer between your accounts" and **Balance check passed: ₦98,500.00**.
+- In **Transactions**, the ₦100,000 appears as "Transfer to Kuda test" and "Transfer from GT test".
+- On Home, this month's spending does **not** include that ₦100,000.
+
+### S5 — Undo an import
+1. **Imports** → open the Kuda import → **Undo import… → Yes, undo import**.
+
+**Expected:**
+- Kuda test goes back to **₦0.00** and **Estimated**.
+- GT test's "NIP TRF TO KUDA…" row goes back to type **Expense**.
+- GT test still shows ✓ Matches statement.
+- Importing the Kuda file again works, and the transfer is matched again.
+
+### S6 — Choose columns yourself (and have them remembered)
+1. Add account `Header test` (starting `0`, as of 30 Sep 2026).
+2. Import `sample-unusual-headers.csv` into it. The **Columns** section opens with "Couldn't detect the columns".
+3. Set:
+   - Heading row: **Row 3** (When, What, Out)
+   - How amounts are shown: **Separate money in / money out**
+   - Date: **When**; Description: **What**; Money out: **Out**; Money in: **In**
+4. Click **Apply and re-check rows**, then **Import 2**. Keep "Remember these column settings" ticked.
+5. Import the same file into Header test again.
+
+**Expected:** after step 4 there are 2 New rows, and "Refund from seller" is typed **Refund**. In step 5, Columns says "Using the settings you saved for this account" and both rows are **Already imported**. Cancel it.
+
+### S7 — Possible duplicate of something you typed by hand
+1. Add account `Dup test` (starting `100,000`, as of 30 Sep 2026).
+2. **Transactions → Add** an **Expense** of `25,000.50` at `Shoprite`, Dup test, dated **2 Oct 2026**.
+3. Import the GTBank sample CSV into Dup test.
+
+**Expected:** 8 New and **1 Possible duplicate** (unticked, with the note "Looks like 'Shoprite' on 02 Oct…"). After **Import 8**, the balance check passes at **₦423,943.06**, because your manual entry stands in for that row.
+
+### S8 — Check against your bank by hand
+1. **Accounts → GT test → Check against bank**: balance `400,000`, at the end of **6 Oct 2026** → **Check balance**.
+2. Repeat with `423,943.06` for the same date.
+
+**Expected:** step 1 shows a difference of **₦23,943.06** and the badge changes to "Differs from statement by ₦23,943.06". Step 2 shows "Matches", the badge returns to green, and "Previous checks" lists both.
+
+### S9 — Editing old data breaks the match (and fixing it restores it)
+1. **Transactions** → open the GT test **Shoprite** row → Edit → amount `25,500.50` → Save.
+2. Edit it back to `25,000.50`.
+
+**Expected:** after step 1, GT test shows "Differs from statement by ₦500.00". After step 2 it shows ✓ Matches statement again.
+
+### S10 — Bad files are explained
+Import into any account:
+- a PDF, or
+- a file renamed to `.xls` that was really saved from a web page (if you have one).
+
+**Expected:** a clear message, e.g. "PDF statements aren't supported yet…" or "This file is a web page saved with a spreadsheet name…". Nothing is staged.
+
+### S11 — Mobile and keyboard
+With F12 + Ctrl+Shift+M (iPhone SE), open an import review. The rows are readable, the checkboxes and type menus are tappable, and the Import bar stays at the bottom. Tab through the review with the keyboard.
+
+### Optional — simulated bank events
+1. In `.env` set `DEMO_MODE=true`, then run `docker compose up -d`.
+2. **Imports → Simulate bank events → Import**.
+
+**Expected:** a "Demo bank (simulated)" account appears with ✓ Matches statement. Undo that import afterwards, then set `DEMO_MODE=false` and run `docker compose up -d` again.
+
+### Reporting back
+Reply with one line, for example `S1 pass … S11 pass`. For anything that fails, add a screenshot.
+
+**Most useful of all:** try a **real statement** from your own bank (CSV or Excel) in a test account, then tell me whether the columns were detected and whether the balance check passed. **Don't send me the file.** If you want an exact preset added, send a redacted copy with names and account numbers replaced by X.

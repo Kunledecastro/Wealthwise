@@ -61,3 +61,17 @@ Backend tests run against a real PostgreSQL database `wealthwise_test`, as the r
 | ruff / mypy --strict / eslint / tsc / next build | clean |
 | migrate-check incl. drift | OK |
 | Manual end-to-end via web origin | balances and monthly totals match hand calculation |
+
+## Latest results (Phase 3, 28 Oct 2026)
+
+| Check | Result |
+|---|---|
+| pytest (all backend) | 286 passed |
+| Ledger engine branch coverage | 100% (incl. new rule B5) |
+| Ingestion package coverage | 92% |
+| Statement layouts tested end to end | CSV debit/credit (preamble, newest-first), CSV signed amount, CSV semicolon + DR/CR, .xlsx money in/out, .xls withdrawals/lodgements |
+| vitest / eslint / tsc / next build | clean |
+| migrate-check incl. drift | OK |
+| pip-audit | no known vulnerabilities |
+| Live run via web origin | GTBank-style CSV → 9 rows, statement balance matched; same statement as .xlsx → 9 duplicates; Kuda credit matched as transfer; simulated events reconciled; 11 MB upload → clear 413 |
+| CI | now also imports a sample statement through the running Docker stack (`scripts/smoke_import.sh`) |

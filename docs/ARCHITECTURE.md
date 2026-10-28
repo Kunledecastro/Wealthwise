@@ -1,6 +1,6 @@
 # Architecture (Phase 0 proposal)
 
-Status: **PROPOSED — awaiting product-owner approval.** Nothing here is implemented yet.
+Status: **Approved.** Implemented so far: auth (Phase 1), ledger and transactions (Phase 2), statement ingestion and reconciliation (Phase 3). Later sections describe planned work.
 
 ## 1. Guiding constraints
 
@@ -74,6 +74,7 @@ Adapter (manual | csv/xlsx | pdf | simulated | email* | open banking*)
 ```
 
 - Imports are **idempotent**: re-uploading the same file produces zero new transactions.
+- *Phase 3 status:* manual, CSV, XLSX, XLS and simulated adapters are implemented in `api/app/ingestion/` (readers → detect → normalise → service). PDF, email alerts and Open Banking remain planned.
 - Nothing from a file is committed without passing through the review screen (manual entry is the exception).
 - `*` email alerts and Open Banking are deferred until the core engine is stable and the regulatory/consent position is verified. No screen scraping, no bank credentials — ever.
 

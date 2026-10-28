@@ -1,6 +1,6 @@
 # Data model (Phase 0 proposal)
 
-Status: tables from Phases 1–2 are **implemented** (users, preferences, sessions, reset tokens, invites, auth_attempts, audit_events, currencies, accounts, transactions, transaction_revisions). The rest is the target shape for later phases.
+Status: tables from Phases 1–3 are **implemented** (Phase 3 added import_batches, import_rows, import_profiles, reconciliation_points and transactions.import_batch_id) (users, preferences, sessions, reset tokens, invites, auth_attempts, audit_events, currencies, accounts, transactions, transaction_revisions). The rest is the target shape for later phases.
 
 ## 1. Conventions
 
@@ -100,8 +100,10 @@ Constraints: `UNIQUE (account_id, external_ref) WHERE external_ref IS NOT NULL`;
 
 ## 4. Deduplication
 
-1. If `external_ref` present → unique per account; exact match = duplicate.
-2. Else fingerprint = SHA-256 of `account_id | transaction_date | direction | amount_minor | normalised narration | occurrence_index`.
+*Implemented in Phase 3 with one change (D-031): a bank reference is only used when it is unique within the file.*
+
+1. If `external_ref` present (and unique in the file) → exact match in the account = duplicate.
+2. Fingerprint = SHA-256 of `account_id | transaction_date | direction | amount_minor | normalised narration | occurrence_index`.
    `occurrence_index` = position among identical rows **within the same source file**, so two genuine identical ₦500 POS charges on one day are both kept, while re-importing that file still dedupes.
 3. Near-matches (same amount/direction ±2 days, similar narration, different source) are flagged `possible_duplicate` for user review — never auto-merged.
 
