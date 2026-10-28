@@ -302,7 +302,7 @@ docker compose ps -a
 2. Import `sample-kuda-transfer-in.csv` into Kuda test.
 
 **Expected:**
-- "TRF FROM GTB JOHN DOE" is typed **Transfer between my accounts**, with the note "Matches money to GT test on 3 Oct…".
+- "TRF FROM GTB JOHN DOE" is typed **Transfer between my accounts**, with the note "Matches money from GT test on 3 Oct…".
 - After **Import 2**: "matched 1 transfer between your accounts" and **Balance check passed: ₦98,500.00**.
 - In **Transactions**, the ₦100,000 appears as "Transfer to Kuda test" and "Transfer from GT test".
 - On Home, this month's spending does **not** include that ₦100,000.
