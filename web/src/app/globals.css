@@ -41,3 +41,14 @@
 html, body { background: var(--bg); color: var(--fg); }
 body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
 .tabular { font-variant-numeric: tabular-nums; }
+
+@media print {
+  :root {
+    --bg: #ffffff; --surface: #ffffff; --muted: #f3f4f2; --border: #d9ddd5;
+    --fg: #000000; --fg-subtle: #4a554f; color-scheme: light;
+  }
+  @page { size: A4; margin: 14mm; }
+  html, body { background: #ffffff !important; color: #000000; font-size: 11pt; }
+  .break-inside-avoid { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}

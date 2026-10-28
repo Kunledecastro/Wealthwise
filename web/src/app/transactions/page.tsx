@@ -35,11 +35,12 @@ function Transactions() {
   const params = useSearchParams();
   const [filters, setFilters] = useState({
     account: params.get("account") ?? "",
-    kind: "",
-    status: "",
-    from: "",
-    to: "",
+    kind: params.get("kind") ?? "",
+    status: params.get("status") ?? "",
+    from: params.get("from") ?? "",
+    to: params.get("to") ?? "",
     q: "",
+    merchant: params.get("merchant") ?? "",
     category: params.get("category") ?? "",
     review: params.get("review") === "1" ? "1" : "",
   });
@@ -58,6 +59,7 @@ function Transactions() {
     if (filters.q.trim()) p.set("q", filters.q.trim());
     if (filters.category) p.set("category", filters.category);
     if (filters.review) p.set("needs_review", "true");
+    if (filters.merchant) p.set("merchant", filters.merchant);
     return p;
   }, [filters]);
 
@@ -96,6 +98,16 @@ function Transactions() {
 
       {flash && <Alert kind="success">{flash}</Alert>}
 
+      {filters.merchant && (
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          Showing merchant:{" "}
+          <span className="font-medium">{filters.merchant === "none" ? "No merchant recognised" : filters.merchant}</span>
+          <button type="button" onClick={() => setFilter("merchant", "")} className="rounded-md px-2 py-1 text-[var(--accent)] hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+            Clear
+          </button>
+        </p>
+      )}
+
       <Card className="p-4 sm:p-4">
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <Field label="Search" placeholder="Merchant, description, notes" value={filters.q} onChange={(e) => setFilter("q", e.target.value)} />
@@ -124,7 +136,7 @@ function Transactions() {
           Only show ones that need a category
         </label>
         {anyFilter && (
-          <button className="mt-3 text-sm text-[var(--accent)] hover:underline" onClick={() => { setFilters({ account: "", kind: "", status: "", from: "", to: "", q: "", category: "", review: "" }); setPage(1); }}>
+          <button className="mt-3 text-sm text-[var(--accent)] hover:underline" onClick={() => { setFilters({ account: "", kind: "", status: "", from: "", to: "", q: "", merchant: "", category: "", review: "" }); setPage(1); }}>
             Clear filters
           </button>
         )}

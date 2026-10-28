@@ -421,3 +421,194 @@ def test_by_category_unknown_kind_fails_loudly():
 
     with pytest.raises(ValueError):
         by_category([ec("bonus", "credit", 1, None)])
+
+
+# ---------- R15-R18: trends, merchants, comparisons ----------
+
+import itertools  # noqa: E402
+
+from app.ledger.engine import (  # noqa: E402
+    bucket_start,
+    buckets,
+    by_merchant,
+    percent_change,
+    previous_period,
+    time_series,
+)
+
+
+def test_r15_bucket_start_day_week_month():
+    wed = date(2026, 10, 14)  # a Wednesday
+    assert bucket_start(wed, "day") == wed
+    assert bucket_start(wed, "week", 1) == date(2026, 10, 12)  # Monday
+    assert bucket_start(wed, "week", 7) == date(2026, 10, 11)  # Sunday
+    assert bucket_start(date(2026, 10, 11), "week", 7) == date(2026, 10, 11)
+    assert bucket_start(wed, "month") == date(2026, 10, 1)
+    with pytest.raises(ValueError):
+        bucket_start(wed, "year")
+    with pytest.raises(ValueError):
+        bucket_start(wed, "week", 0)
+
+
+def test_r15_buckets_include_empty_and_are_clipped():
+    b = buckets(date(2026, 10, 14), date(2026, 10, 27), "week", 1)
+    assert b[0] == (date(2026, 10, 14), date(2026, 10, 18))  # partial first week
+    assert b[-1] == (date(2026, 10, 26), date(2026, 10, 27))  # partial last week
+    assert len(b) == 3
+    m = buckets(date(2026, 1, 15), date(2026, 3, 10), "month")
+    assert m == [
+        (date(2026, 1, 15), date(2026, 1, 31)),
+        (date(2026, 2, 1), date(2026, 2, 28)),
+        (date(2026, 3, 1), date(2026, 3, 10)),
+    ]
+    assert len(buckets(date(2026, 10, 1), date(2026, 10, 31), "day")) == 31
+    with pytest.raises(ValueError):
+        buckets(date(2026, 10, 2), date(2026, 10, 1), "day")
+
+
+def test_r16_series_values_and_empty_buckets():
+    es = [
+        e("expense", "debit", 100, d=date(2026, 10, 1)),
+        e("expense", "debit", 50, d=date(2026, 10, 3)),
+        e("refund", "credit", 20, d=date(2026, 10, 3)),
+        e("income", "credit", 1000, d=date(2026, 10, 3)),
+        e("expense", "debit", 999, d=date(2026, 10, 3), status="failed"),
+        e("expense", "debit", 7, d=date(2026, 10, 3), cur="USD"),
+        e("expense", "debit", 5, d=date(2026, 9, 30)),  # outside
+    ]
+    pts = time_series(es, date(2026, 10, 1), date(2026, 10, 3), "day")
+    assert [p.summary.net_spending for p in pts] == [100, 0, 30]
+    assert pts[1].summary.transaction_count == 0
+    assert pts[2].summary.income == 1000
+    usd = time_series(es, date(2026, 10, 1), date(2026, 10, 3), "month", currency="USD")
+    assert len(usd) == 1 and usd[0].summary.gross_spending == 7
+    assert usd[0].date_from == date(2026, 10, 1)
+
+
+def test_r17_by_merchant():
+    def em(kind, direction, amount, merchant, status="posted"):
+        return Entry(kind, direction, amount, "NGN", status, D, 1, False, None, merchant)
+
+    es = [
+        em("expense", "debit", 300, "SHOPRITE"),
+        em("expense", "debit", 200, "SHOPRITE"),
+        em("refund", "credit", 50, "SHOPRITE"),
+        em("fee", "debit", 10, None),
+        em("income", "credit", 9999, "ACME"),
+        em("transfer", "debit", 500, "KUDA"),
+        em("expense", "debit", 70, "BOLT", status="pending"),
+    ]
+    m = by_merchant(es)
+    assert m[("NGN", "SHOPRITE")].net_spending == 450
+    assert m[("NGN", "SHOPRITE")].transaction_count == 3
+    assert m[("NGN", None)].gross_spending == 10
+    assert ("NGN", "ACME") not in m and ("NGN", "KUDA") not in m and ("NGN", "BOLT") not in m
+    with pytest.raises(ValueError):
+        by_merchant([em("bonus", "credit", 1, "X")])
+
+
+@pytest.mark.parametrize(
+    ("d0", "d1", "p0", "p1"),
+    [
+        # this month so far -> same days last month
+        (date(2026, 10, 1), date(2026, 10, 28), date(2026, 9, 1), date(2026, 9, 28)),
+        # whole month -> whole previous month (end clamped/extended to month end)
+        (date(2026, 10, 1), date(2026, 10, 31), date(2026, 9, 1), date(2026, 9, 30)),
+        (date(2026, 3, 1), date(2026, 3, 31), date(2026, 2, 1), date(2026, 2, 28)),
+        (date(2026, 3, 1), date(2026, 3, 30), date(2026, 2, 1), date(2026, 2, 28)),
+        # last 3 months
+        (date(2026, 8, 1), date(2026, 10, 31), date(2026, 5, 1), date(2026, 7, 31)),
+        # year to date and full year -> same dates a year earlier
+        (date(2026, 1, 1), date(2026, 10, 28), date(2025, 1, 1), date(2025, 10, 28)),
+        (date(2026, 1, 1), date(2026, 12, 31), date(2025, 1, 1), date(2025, 12, 31)),
+        # January only is a single month
+        (date(2026, 1, 1), date(2026, 1, 31), date(2025, 1, 1), date(2025, 1, 31)),
+        # spanning a year boundary from the 1st
+        (date(2025, 12, 1), date(2026, 1, 31), date(2025, 10, 1), date(2025, 11, 30)),
+        # custom -> same length immediately before
+        (date(2026, 10, 10), date(2026, 10, 19), date(2026, 9, 30), date(2026, 10, 9)),
+    ],
+)
+def test_r18_previous_period(d0, d1, p0, p1):
+    assert previous_period(d0, d1) == (p0, p1)
+
+
+def test_r18_previous_period_rejects_reversed_range():
+    with pytest.raises(ValueError):
+        previous_period(date(2026, 10, 2), date(2026, 10, 1))
+
+
+def test_r18_leap_year_clamp():
+    assert previous_period(date(2024, 3, 1), date(2024, 3, 29)) == (
+        date(2024, 2, 1),
+        date(2024, 2, 29),
+    )
+
+
+@pytest.mark.parametrize(
+    ("cur", "prev", "pct"),
+    [
+        (150, 100, 50),
+        (50, 100, -50),
+        (100, 100, 0),
+        (1, 0, None),
+        (0, 0, None),
+        (1005, 1000, 1),  # 0.5% rounds away from zero
+        (995, 1000, -1),
+        (1004, 1000, 0),
+        (-50, -100, 50),  # net cash flow improved from -100 to -50
+        (-150, -100, -50),
+    ],
+)
+def test_r18_percent_change(cur, prev, pct):
+    assert percent_change(cur, prev) == pct
+
+
+week_starts = st.integers(min_value=1, max_value=7)
+grans = st.sampled_from(["day", "week", "month"])
+
+
+@settings(max_examples=200)
+@given(st.lists(entries(), max_size=40), dates, dates, grans, week_starts)
+def test_prop_series_buckets_add_up_to_period(es, a, b, gran, ws):
+    d0, d1 = min(a, b), max(a, b)
+    whole = summarize(es, d0, d1).get("NGN")
+    pts = time_series(es, d0, d1, gran, ws)
+    keys = ["income", "gross_spending", "fees", "refunds", "pending_in", "pending_out"]
+    keys.append("transaction_count")
+    for k in keys:
+        assert sum(getattr(p.summary, k) for p in pts) == (getattr(whole, k) if whole else 0)
+    # contiguous, non-overlapping, covering the period exactly
+    assert pts[0].date_from == d0 and pts[-1].date_to == d1
+    for x, y in itertools.pairwise(pts):
+        assert y.date_from == x.date_to + timedelta(days=1)
+
+
+@settings(max_examples=200)
+@given(st.lists(entries(), max_size=40), st.lists(st.sampled_from(["A", "B", None]), max_size=40))
+def test_prop_merchants_add_up_to_net_spending(es, names):
+    tagged = [
+        Entry(
+            x.kind,
+            x.direction,
+            x.amount_minor,
+            "NGN",
+            x.status,
+            x.transaction_date,
+            1,
+            False,
+            None,
+            names[i] if i < len(names) else None,
+        )
+        for i, x in enumerate(es)
+    ]
+    s = summarize(tagged).get("NGN")
+    assert sum(m.net_spending for m in by_merchant(tagged).values()) == (s.net_spending if s else 0)
+
+
+@settings(max_examples=300)
+@given(dates, dates)
+def test_prop_previous_period_ends_before_and_is_valid(a, b):
+    d0, d1 = min(a, b), max(a, b)
+    p0, p1 = previous_period(d0, d1)
+    assert p0 <= p1 < d0

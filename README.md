@@ -6,7 +6,7 @@ Personal finance and spending intelligence web app for the Nigerian market (NGN 
 
 ## Status
 
-**Phase 4 complete (awaiting product-owner review).** Sign-in and invites (1); accounts, transactions and the ledger engine (2); bank statement import with duplicate detection and balance checks (3); automatic categories with reasons, your own rules, a review queue and spending by category (4). See [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md).
+**Phase 5 complete (awaiting product-owner review).** Sign-in and invites (1); accounts, transactions and the ledger engine (2); bank statement import with duplicate detection and balance checks (3); automatic categories with reasons, your own rules, a review queue and spending by category (4); a dashboard with period comparisons and trend charts, reports with CSV export, and a printable summary (5). See [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md).
 
 ## Run it with Docker (recommended)
 

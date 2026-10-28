@@ -1,6 +1,7 @@
 # Manual tests
 
-- [Phase 4](#phase-4) (current)
+- [Phase 5](#phase-5) (current)
+- [Phase 4](#phase-4)
 - [Phase 3](#phase-3)
 - [Phase 2](#phase-2)
 - [Phase 1](#phase-1) (passed 26 Oct 2026)
@@ -464,3 +465,92 @@ Import `docs\samples\sample-gtbank-style-statement.csv` into a **new** test acco
 
 ### Reporting back
 Reply with one line, for example `C1 pass … C10 pass`, and add a screenshot for any failure. If built-in recognition misses merchants you use often, list them and I'll add them.
+
+---
+
+## Phase 5
+
+Time needed: about 15 minutes. You need some transactions this month and last month. If you have none, import `docs\samples\sample-gtbank-style-statement.csv` into a test account first.
+
+### 0. Update and restart
+```
+cd C:\Users\AdekunleOludele\Wealthwise
+git pull
+docker compose up --build -d
+```
+Open http://localhost:3000 and sign in.
+
+### D1 — Dashboard totals
+Open **Home**.
+
+**Expected:**
+- **This month** is selected. The subtitle shows the 1st of the month to today.
+- **Income**, **Spending** and **Net cash flow** match what you recorded. Under each figure is a change such as "↑ 12% vs 1–28 Sep 2026", or "No comparison" if last month had nothing.
+
+### D2 — Period chips
+Click **Last month**, then **Last 3 months**, then **This year**.
+
+**Expected:**
+- The figures, chart and lists all change.
+- The address bar shows `?period=…`. Refreshing the page keeps your choice.
+
+### D3 — Custom period
+1. Click **Custom**.
+2. Pick a start and end date and click **Apply**.
+3. Try an end date before the start.
+
+**Expected:**
+- Step 2: the figures update.
+- Step 3: **Apply** is disabled.
+
+### D4 — Trend chart
+On **This month**:
+1. Hover over (or tap) a bar.
+2. Click **Income vs spending**, then **Table**.
+
+**Expected:**
+- Step 1: a tooltip shows the day and the exact naira amounts.
+- Step 2: orange (income) and blue (spending) bars appear with a legend. **Table** shows the same figures as rows.
+
+### D5 — Drill down
+Click a row in **Top categories**, then go back and click a row in **Top merchants**.
+
+**Expected:** the Transactions page opens, filtered to that category (or merchant) and period. The amounts add up to the figure you clicked.
+
+### D6 — Account filter
+This only appears if you have two or more accounts. Choose one account in the **Account** box.
+
+**Expected:** everything on the page, including balances, shows only that account.
+
+### D7 — Reports page and CSV
+1. Click **Full report, CSV and print** (or **Reports** in the menu).
+2. Switch **Daily / Weekly / Monthly**.
+3. Click each **CSV** button.
+
+**Expected:**
+- Step 2: the chart regroups. Weekly bars start on the first day of the week set in Settings.
+- Step 3: three files download (period, categories, merchants). Open the period file in Excel: the **total** row matches the Home figures, and amounts show as plain numbers like `25000.50`.
+
+### D8 — Printable summary
+1. Click **Printable summary**, then **Print or save as PDF**.
+2. In the print preview, choose **Save as PDF**.
+
+**Expected:**
+- The preview shows no menu bar.
+- It has the generation date, the period it is compared with, totals, categories, merchants, a by-day/week/month table with a total row, balances with "Matches statement" or "Estimated", and the notes at the bottom.
+
+### D9 — Phone and dark mode
+1. Open Home on your phone, or narrow the browser window.
+2. Switch your computer to dark mode.
+
+**Expected:**
+- Step 1: the tiles stack in two columns and the chart labels don't overlap.
+- Step 2: the chart colours and text stay readable.
+
+### D10 — Empty period
+Choose **Custom** with a range where you have no transactions (for example, last year).
+
+**Expected:** ₦0.00 figures, "No income or spending in this period" in place of the chart, and empty-list messages. There are no errors.
+
+### Reporting back
+Reply with one line, for example `D1 pass … D10 pass`, and add a screenshot for any failure.

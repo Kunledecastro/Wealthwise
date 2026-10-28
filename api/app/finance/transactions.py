@@ -98,6 +98,7 @@ def _filtered(
     max_amount: int | None,
     category: str | None = None,
     needs_review: bool | None = None,
+    merchant: str | None = None,
 ) -> Select[Transaction]:
     stmt = select(Transaction).where(
         Transaction.user_id == auth.user.id, Transaction.deleted_at.is_(None)
@@ -128,6 +129,10 @@ def _filtered(
         )
     if needs_review is not None:
         stmt = stmt.where(Transaction.needs_review.is_(needs_review))
+    if merchant == "none":
+        stmt = stmt.where(Transaction.merchant_normalised.is_(None))
+    elif merchant:
+        stmt = stmt.where(Transaction.merchant_normalised == merchant)
     if q:
         term = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         stmt = stmt.where(
@@ -162,6 +167,7 @@ def list_transactions(
     max_amount: Annotated[int | None, Query(ge=0)] = None,
     category: Annotated[str | None, Query(max_length=40)] = None,
     needs_review: bool | None = None,
+    merchant: Annotated[str | None, Query(max_length=120)] = None,
     page: Annotated[int, Query(ge=1, le=10_000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 50,
     db: Session = Depends(get_db),
@@ -180,6 +186,7 @@ def list_transactions(
         max_amount,
         category,
         needs_review,
+        merchant,
     )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
@@ -212,6 +219,7 @@ def export_csv(
     q: Annotated[str | None, Query(max_length=100)] = None,
     category: Annotated[str | None, Query(max_length=40)] = None,
     needs_review: bool | None = None,
+    merchant: Annotated[str | None, Query(max_length=120)] = None,
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> StreamingResponse:
@@ -228,6 +236,7 @@ def export_csv(
         None,
         category,
         needs_review,
+        merchant,
     )
     rows = db.scalars(stmt.order_by(Transaction.transaction_date, Transaction.id)).all()
     outs = txn_outs(db, auth.user.id, rows)

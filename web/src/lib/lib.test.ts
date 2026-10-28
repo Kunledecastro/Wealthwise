@@ -66,3 +66,42 @@ describe("parseMoneyToMinor", () => {
     }
   });
 });
+
+import { bucketLabel, bucketTitle, compactMinor, isIsoDate, periodFromParams, periodLabel, presetRange } from "./periods";
+
+describe("periods", () => {
+  const today = "2026-10-28";
+  it("computes presets in the user's own calendar", () => {
+    expect(presetRange("this_month", today)).toEqual({ from: "2026-10-01", to: "2026-10-28" });
+    expect(presetRange("last_month", today)).toEqual({ from: "2026-09-01", to: "2026-09-30" });
+    expect(presetRange("last_3_months", today)).toEqual({ from: "2026-08-01", to: "2026-10-28" });
+    expect(presetRange("this_year", today)).toEqual({ from: "2026-01-01", to: "2026-10-28" });
+    expect(presetRange("last_month", "2026-03-15")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(presetRange("last_month", "2026-01-10")).toEqual({ from: "2025-12-01", to: "2025-12-31" });
+  });
+  it("reads periods from the URL safely", () => {
+    const p = (s: string) => periodFromParams(new URLSearchParams(s), today);
+    expect(p("")).toEqual({ preset: "this_month", from: "2026-10-01", to: "2026-10-28" });
+    expect(p("period=custom&from=2026-05-01&to=2026-05-31")).toEqual({ preset: "custom", from: "2026-05-01", to: "2026-05-31" });
+    expect(p("period=custom&from=2026-05-31&to=2026-05-01").preset).toBe("this_month");
+    expect(p("period=custom&from=2026-02-30&to=2026-03-01").preset).toBe("this_month");
+    expect(p("period=evil").preset).toBe("this_month");
+    expect(isIsoDate("2026-13-01")).toBe(false);
+  });
+  it("labels buckets and periods", () => {
+    expect(bucketLabel("2026-10-05", "2026-10-05", "day")).toBe("5 Oct");
+    expect(bucketLabel("2026-09-28", "2026-10-04", "week")).toBe("28 Sep–4 Oct");
+    expect(bucketLabel("2026-10-01", "2026-10-31", "month")).toBe("Oct 26");
+    expect(bucketTitle("2026-10-01", "2026-10-31", "month")).toBe("Oct 2026");
+    expect(bucketTitle("2026-10-01", "2026-10-28", "month")).toBe("1 Oct – 28 Oct 2026");
+    expect(bucketTitle("2026-10-05", "2026-10-05", "day")).toBe("Mon 5 Oct 2026");
+    expect(periodLabel("2026-10-01", "2026-10-28")).toBe("1–28 Oct 2026");
+    expect(periodLabel("2025-12-01", "2026-01-31")).toBe("1 Dec 2025 – 31 Jan 2026");
+  });
+  it("formats compact axis values", () => {
+    expect(compactMinor(0)).toBe("₦0");
+    expect(compactMinor(2_500_000_00)).toBe("₦2.5m");
+    expect(compactMinor(25_000_00)).toBe("₦25k");
+    expect(compactMinor(-1_500_00)).toBe("-₦1.5k");
+  });
+});

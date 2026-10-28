@@ -42,6 +42,7 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
   const links: { href: string; label: string; badge?: number }[] = [
     { href: "/", label: "Home" },
     { href: "/transactions", label: "Transactions" },
+    { href: "/reports", label: "Reports" },
     { href: "/review", label: "To review", badge: review.data?.count ?? 0 },
     { href: "/categories", label: "Categories" },
     { href: "/accounts", label: "Accounts" },
@@ -62,7 +63,7 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
 
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur">
+      <header className="sticky top-0 z-10 print:hidden border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <Link href="/" className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
             <Brand />
@@ -96,7 +97,7 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
+      <main className="mx-auto max-w-5xl px-4 py-8 print:max-w-none print:p-0">{children}</main>
     </div>
   );
 }

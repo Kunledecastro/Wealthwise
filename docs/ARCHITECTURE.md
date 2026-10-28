@@ -35,7 +35,7 @@ Key decisions (full rationale in `DECISIONS.md`):
 
 1. **Single origin.** The browser only ever talks to one host. The proxy routes `/api/*` to FastAPI and everything else to Next.js. Session cookies are first-party, `SameSite=Lax`, no CORS needed. In local dev, Next.js `rewrites` play the proxy's role.
 2. **FastAPI owns all business logic and all data access.** Next.js is a UI layer; it never connects to PostgreSQL and never computes a financial total.
-3. **One calculation module (`app/ledger/`)** is the single source of truth for income, expense, net cash flow, balances, budget usage and projections. Dashboard, reports, budgets, insights and the AI assistant all call it. Nothing else sums money.
+3. **One calculation module (`app/ledger/`)** is the single source of truth (Phase 5: `app/reports/` serves the dashboard and reports by calling `summarize`, `time_series`, `by_category`, `by_merchant` and `previous_period`, with no sums of its own) for income, expense, net cash flow, balances, budget usage and projections. Dashboard, reports, budgets, insights and the AI assistant all call it. Nothing else sums money.
 4. **No Redis/Celery in the MVP.** Imports run as tracked jobs (`import_batches` table) executed by FastAPI background tasks; scheduled work (recurring-bill detection, budget alerts) runs via a small in-process scheduler or a cron-invoked CLI command. Revisit when statement volume or recurring jobs justify a queue (decision D-006).
 5. **Ollama is optional** and behind an interface with a deterministic fallback. The model never touches the database; it only receives results from whitelisted backend tool functions.
 

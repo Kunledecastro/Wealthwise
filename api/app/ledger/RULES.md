@@ -26,6 +26,14 @@ Each rule below has at least one test in `tests/test_ledger.py`.
 | R14 | A **refund** reduces spending in **its own** category (which is the purchase's category when the refund is linked to it). Categories are labels only: they never change whether something counts as income or spending. |
 | R12 | Reporting periods use `transaction_date` (the date it happened, in the user's timezone), inclusive at both ends. |
 
+## Trends and comparisons
+| # | Rule |
+|---|---|
+| R15 | **Trend buckets** are days, weeks or calendar months. Weeks start on the user's chosen first day of the week. Every bucket in the period is listed, including empty ones, and the first and last buckets are clipped to the period (a partial week or month is labelled with its real dates). |
+| R16 | Each bucket applies R1–R12 to its own dates. Every transaction falls into exactly one bucket, so **the buckets always add up to the period totals**. |
+| R17 | **Spending by merchant** uses the same inclusion rules as R1–R12, covers spending and refunds only (income is not grouped by merchant), and puts transactions with no recognised merchant in their own group, so the merchants always add up to net spending. |
+| R18 | **Comparison period.** A period that starts on 1 January and ends in the same year is compared with the same dates one year earlier. A period that starts on the 1st of a month is compared with the same days shifted back by the number of months it touches (this month so far → the same days last month; a whole month → the whole previous month). Any other period is compared with the same number of days immediately before. % change = (current − previous) ÷ \|previous\|, rounded to a whole number; it is shown as "no comparison" when the previous figure is zero. |
+
 ## Balances
 | # | Rule |
 |---|---|

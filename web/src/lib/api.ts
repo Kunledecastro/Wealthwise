@@ -375,3 +375,53 @@ export function categoryKindFor(txnKind: string): "expense" | "income" | null {
   if (txnKind === "income") return "income";
   return null;
 }
+
+// ---- Phase 5: dashboard and reports ----
+
+export type Granularity = "day" | "week" | "month";
+
+export type SeriesPoint = {
+  date_from: string;
+  date_to: string;
+  income: number;
+  gross_spending: number;
+  refunds: number;
+  net_spending: number;
+  net_cash_flow: number;
+  pending_out: number;
+  transaction_count: number;
+};
+
+export type ReportCategoryRow = {
+  category_id: string | null;
+  name: string;
+  color: string;
+  net_spending: number;
+  income: number;
+  transaction_count: number;
+};
+
+export type MerchantRow = { merchant: string | null; net_spending: number; transaction_count: number };
+
+export type Overview = {
+  date_from: string;
+  date_to: string;
+  timezone: string;
+  currency: string;
+  granularity: Granularity;
+  week_start: number;
+  summary: CurrencySummary;
+  previous: { date_from: string; date_to: string; summary: CurrencySummary };
+  changes: { income: number | null; net_spending: number | null; net_cash_flow: number | null; transaction_count: number | null };
+  series: SeriesPoint[];
+  spending_by_category: ReportCategoryRow[];
+  income_by_category: ReportCategoryRow[];
+  top_merchants: MerchantRow[];
+  other_merchants: MerchantRow | null;
+  other_currencies: string[];
+  accounts: Account[];
+  balance_totals: Record<string, number>;
+  balances_are_estimated: boolean;
+  needs_review_count: number;
+  generated_on: string;
+};

@@ -86,3 +86,15 @@ Backend tests run against a real PostgreSQL database `wealthwise_test`, as the r
 | vitest / eslint / tsc / next build | clean |
 | migrate-check incl. drift | OK |
 | Upgrade backfill on dev data | 50 existing transactions categorised; 4 sent to review; categories summed exactly to the month's net spending |
+
+## Latest results (Phase 5, 28 Oct 2026)
+
+| Check | Result |
+|---|---|
+| pytest (all backend) | 402 passed |
+| Ledger engine branch coverage | 100% (incl. R15–R18: trend buckets, merchants, comparison period, % change; property tests that buckets and merchants add up to the period totals) |
+| vitest | 14 passed (incl. period presets, URL parsing, labels, compact axis values) |
+| eslint / tsc / next build | clean |
+| Chart palette | spending/income pair passes every check of the dataviz validator against #ffffff (light) and #161d1a (dark) |
+| Visual check | headless Chromium screenshots of Home, Reports and Print at 1280px and 390px, light and dark; print view rendered to a one-page A4 PDF |
+| Live run via web origin | after the sample import, October series, categories and merchants each summed to ₦126,056.94; CSV figures matched the screen |

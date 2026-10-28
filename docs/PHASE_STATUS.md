@@ -6,8 +6,8 @@
 | 1 | Repo scaffold, Docker Compose, CI, FastAPI + Next.js skeleton, Postgres + Alembic, **authentication & user preferences** | **Accepted** (26 Oct 2026) |
 | 2 | Financial accounts, transactions (manual entry, edit with revisions, filters, statuses), **ledger engine + full unit tests**, data export, account deletion, email change | **Accepted** (28 Oct 2026, manual checks not reported) |
 | 3 | Ingestion framework + CSV/XLSX/XLS adapters, dedupe, import review screen, transfer & reversal matching, reconciliation, undo, simulated bank events | **Accepted** (28 Oct 2026) |
-| 4 | Categories, rules engine, review queue, learn-from-correction, spending by category | **Complete — awaiting your manual checks** (28 Oct 2026) |
-| 5 | Dashboard and reports (CSV export, printable summary) | Not started |
+| 4 | Categories, rules engine, review queue, learn-from-correction, spending by category | **Accepted** (28 Oct 2026, manual checks not reported) |
+| 5 | Dashboard and reports: period selector, comparisons, trend charts, top categories and merchants, CSV export, printable summary | **Complete — awaiting your manual checks** (28 Oct 2026) |
 | 6 | Budgets, thresholds, projections, suggested budgets | Not started |
 | 7 | Savings goals and surplus calculation | Not started |
 | 8 | Spending intelligence: recurring detection, duplicates, spikes, insights | Not started |
@@ -359,3 +359,59 @@ The migration adds the categories, and the migrate step then categorises your ex
 - No sub-categories yet.
 - Person-to-person transfers ("NIP TRF TO CHIOMA") can't be guessed. They go to review, where one correction plus a rule handles the rest.
 - AI suggestions are planned for Phase 10. They will only ever be suggestions, behind your rules.
+
+## Phase 5 — report (28 Oct 2026)
+
+**Objective:** a dashboard and reports built only from your ledger, where every figure ties back to the transactions behind it.
+
+### What was built
+
+- **Ledger engine, rules R15–R18** (`api/app/ledger/engine.py`, documented in RULES.md):
+  - **Trend buckets** by day, week (starting on your chosen first weekday) or calendar month. Empty buckets are included and partial first/last buckets are clipped to the period.
+  - **Spending by merchant**, using the same inclusion rules as the totals.
+  - **Comparison period:** this month so far is compared with the same days last month; a whole month with the previous month; the year to date with the same dates last year; a custom range with the same number of days just before it.
+  - **% change** in whole numbers. It shows "no comparison" when the earlier figure is zero.
+- **Reports API:**
+  - `GET /api/reports/overview` returns totals, the comparison period and % changes, the trend series, spending and income by category, the top 10 merchants plus an "everything else" group, other currencies with activity, balances with reconciliation status, and the review count.
+  - `GET /api/reports/export.csv?report=period|categories|merchants`: exact decimal amounts (computed from integer kobo, never floats), a header line naming the period, account and currency, a total row on the period table, formula-injection protection, and an audit event for every export.
+- **Transactions:** a new `merchant=` filter, so you can open a merchant's transactions from a report. The Transactions page now also accepts `from`, `to`, `kind` and `status` in its link.
+- **Home dashboard:**
+  - Period chips (This month, Last month, Last 3 months, This year, Custom) and an account filter (shown when you have more than one account). Both are kept in the address bar, so a view can be bookmarked.
+  - Four KPI tiles (income, spending, net cash flow, pending). Changes are shown with an arrow and words, never colour alone.
+  - Trend chart with Spending / Income vs spending and Chart / Table toggles.
+  - Top categories and top merchants. Each row links to the matching transactions.
+  - Balances today with the estimated/reconciled note, recent transactions, a review alert, and an other-currency notice.
+- **Reports page** (`/reports`): Auto/Daily/Weekly/Monthly grouping, income by category, a CSV button on each table, and a link to the printable summary.
+- **Printable summary** (`/reports/print`): an A4 layout with the generation date, the comparison period, a by-period table with a total row, balances with their statement status, and notes on what counts, estimated balances and that this is not a bank statement. "Print or save as PDF" uses the browser; the app navigation is hidden when printing.
+- **Charts** (Recharts 3.10.1, MIT licence):
+  - One y-axis only, with a hover tooltip showing exact naira figures, a legend when two series are shown, and a table view.
+  - Separate light and dark colours. Spending blue and income orange both passed the colour-blind safety, lightness and contrast checks against the app's actual light and dark surfaces.
+
+### Acceptance criteria
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Period selector, account filter, KPIs with change vs comparison period | Pass | `test_overview_totals_series_and_comparison`, `test_account_filter_and_isolation`, vitest `periods` tests, screenshots |
+| 2 | Daily/weekly/monthly trends; one axis, tooltips, legend, table view, light and dark mode, validated palette | Pass | `test_overview_granularity_rules`, `test_week_start_preference_is_used`; palette validator output; screenshots at desktop and phone width, light and dark |
+| 3 | Top categories and merchants, linked to matching transactions | Pass | `test_overview_categories_and_merchants_add_up`, `test_merchant_filter_drills_down` |
+| 4 | Reports page with CSV exports (period, categories, merchants) and print | Pass | `test_csv_exports`, `test_csv_neutralises_formulas` |
+| 5 | Printable summary with generation date and estimated/reconciled note | Pass | `/reports/print` rendered to a one-page A4 PDF in headless Chromium |
+| 6 | Buckets, categories and merchants always add up; ledger engine at 100% branch coverage; user isolation | Pass | property tests `test_prop_series_buckets_add_up_to_period`, `test_prop_merchants_add_up_to_net_spending`, `test_prop_previous_period_ends_before_and_is_valid`; coverage 100%; isolation test; anonymous route sweep covers the new endpoints; 402 backend tests |
+
+Live run through the web origin, after importing the sample statement: October series, categories and merchants each summed to exactly ₦126,056.94 net spending, and the CSV figures matched the screen.
+
+### Upgrading your running copy
+
+```
+git pull
+docker compose up --build -d
+```
+No database migration in this phase.
+
+### Known limitations
+
+- **Merchant names come from the transaction description.** For a bank transfer to a person (for example "NIP TRF TO KUDA/JOHN DOE"), the "merchant" shown is the receiving bank (KUDA). The fix needs better recognition of person-to-person transfers; this is planned with spending intelligence in Phase 8.
+- Recurring bills, budgets and goals are not on the dashboard yet. They arrive in Phases 6–8 and won't be shown before their calculations exist.
+- Figures are shown in one currency at a time (NGN by default). Activity in other currencies is flagged and never added in.
+- The printable summary relies on the browser's own "Save as PDF". The server does not generate PDF files.
+- Dark mode follows your device setting; there is no in-app toggle yet.

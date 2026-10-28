@@ -104,6 +104,7 @@ def to_entry(t: Transaction) -> Entry:
         account_id=t.account_id,
         deleted=t.deleted_at is not None,
         category_id=t.category_id,
+        merchant=t.merchant_normalised,
     )
 
 
