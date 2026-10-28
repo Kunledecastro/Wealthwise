@@ -115,3 +115,4 @@ jobs:
           echo
           docker compose ps -a
           WW_ADMIN_PASSWORD=Ci-Admin-Passphrase-77 docker compose run --rm -e WW_ADMIN_PASSWORD api python -m app.cli create-admin --email ci@example.com --name CI
+          ./scripts/smoke_import.sh ci@example.com Ci-Admin-Passphrase-77

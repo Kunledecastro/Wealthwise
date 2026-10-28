@@ -40,6 +40,7 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
     { href: "/", label: "Home" },
     { href: "/transactions", label: "Transactions" },
     { href: "/accounts", label: "Accounts" },
+    { href: "/imports", label: "Imports" },
     { href: "/settings", label: "Settings" },
     ...(me.role === "admin" ? [{ href: "/admin", label: "Admin" }] : []),
   ];
@@ -66,7 +67,7 @@ export function AppShell({ children, adminOnly = false }: { children: ReactNode;
               <Link
                 key={l.href}
                 href={l.href}
-                aria-current={pathname === l.href ? "page" : undefined}
+                aria-current={pathname === l.href || (l.href !== "/" && pathname.startsWith(l.href + "/")) ? "page" : undefined}
                 className={cn(
                   "shrink-0 rounded-md px-3 py-2 text-sm hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                   pathname === l.href ? "font-semibold text-[var(--fg)]" : "text-[var(--fg-subtle)]",

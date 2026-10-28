@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record as audit
 from app.auth.schemas import PreferencesOut, PreferencesPatch, UserOut
 from app.auth.sessions import CurrentAuth, client_ip, require_auth
+from app.core.config import get_settings
 from app.db.models import Currency, User
 from app.db.session import get_db
 
@@ -67,3 +68,10 @@ def update_preferences(
             )
         db.commit()
     return PreferencesOut.model_validate(prefs)
+
+
+@router.get("/app-config")
+def app_config(_: CurrentAuth = Depends(require_auth)) -> dict[str, object]:
+    """Feature flags the signed-in UI needs."""
+    s = get_settings()
+    return {"demo_mode": s.demo_mode, "upload_max_mb": s.upload_max_mb}

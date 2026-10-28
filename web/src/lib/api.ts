@@ -50,13 +50,14 @@ export async function parseError(res: Response): Promise<ApiError> {
 
 export async function api<T>(
   path: string,
-  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
+  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; form?: FormData } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") {
     headers["X-CSRF-Token"] = await ensureCsrf();
-    headers["Content-Type"] = "application/json";
+    // For uploads the browser sets the multipart Content-Type (with its boundary) itself.
+    if (!options.form) headers["Content-Type"] = "application/json";
   }
   let res: Response;
   try {
@@ -64,7 +65,7 @@ export async function api<T>(
       method,
       headers,
       credentials: "same-origin",
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
     });
   } catch {
     throw new ApiError(0, "Cannot reach the server. Check your connection and try again.");
@@ -132,8 +133,11 @@ export type Balance = {
   pending_in: number;
   pending_out: number;
   available_incl_pending: number;
-  status: "estimated" | "reconciled" | "stale";
+  status: "estimated" | "reconciled" | "unreconciled";
   as_of: string;
+  statement_as_of: string | null;
+  statement_balance_minor: number | null;
+  difference_minor: number | null;
 };
 
 export type Account = {
@@ -215,3 +219,87 @@ export type Summary = {
   balance_totals: Record<string, number>;
   balances_are_estimated: boolean;
 };
+
+// ---- Phase 3: statement import ----
+
+export type ColumnRole = "date" | "posting_date" | "description" | "debit" | "credit" | "amount" | "indicator" | "balance" | "reference";
+export type Mapping = {
+  header_row: number | null;
+  columns: Record<ColumnRole, number | null>;
+  amount_mode: "debit_credit" | "signed" | "indicator" | null;
+  date_order: "DMY" | "MDY" | "YMD";
+  from_profile?: boolean;
+};
+
+export type ImportRow = {
+  id: string;
+  row_number: number;
+  outcome: "new" | "duplicate" | "possible_duplicate" | "error";
+  include: boolean;
+  error: string | null;
+  note: string | null;
+  transaction_date: string | null;
+  posting_date: string | null;
+  direction: "debit" | "credit" | null;
+  amount_minor: number | null;
+  narration: string | null;
+  external_ref: string | null;
+  balance_after_minor: number | null;
+  suggested_kind: string | null;
+  kind: string | null;
+  allowed_kinds: string[];
+  transaction_id: string | null;
+};
+
+export type ImportBatch = {
+  id: string;
+  account_id: string;
+  account_name: string;
+  adapter: "csv" | "xlsx" | "xls" | "simulated";
+  filename: string;
+  sheet_name: string | null;
+  status: "staged" | "committed" | "discarded" | "undone";
+  counts: Record<string, number>;
+  warnings: string[];
+  statement_first_date: string | null;
+  statement_last_date: string | null;
+  statement_opening_balance_minor: number | null;
+  statement_closing_balance_minor: number | null;
+  can_set_opening: boolean;
+  created_at: string;
+  committed_at: string | null;
+  finished_at: string | null;
+  same_file_imported_at: string | null;
+};
+
+export type ImportDetail = ImportBatch & {
+  mapping: Mapping | null;
+  headers: string[];
+  preview: string[][];
+  rows: ImportRow[];
+  rows_total: number;
+  page: number;
+  page_size: number;
+};
+
+export type CommitResult = {
+  created: number;
+  transfers_linked: number;
+  reversals_linked: number;
+  opening_balance_set: boolean;
+  reconciliation: { as_of: string; statement_minor: number; computed_minor: number; difference_minor: number; matches: boolean } | null;
+  batch: ImportBatch;
+};
+
+export type ReconciliationRecord = {
+  id: string;
+  as_of_date: string;
+  statement_balance_minor: number;
+  computed_balance_minor_then: number;
+  computed_balance_minor_now: number;
+  difference_minor_now: number;
+  source: "statement" | "manual";
+  created_at: string;
+};
+
+export type AppConfig = { demo_mode: boolean; upload_max_mb: number };

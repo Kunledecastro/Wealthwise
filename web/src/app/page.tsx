@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { useAuth } from "@/components/auth-provider";
-import { EstimatedBadge, Money } from "@/components/money";
+import { BalanceStatusBadge, Money } from "@/components/money";
 import { TransactionForm } from "@/components/transaction-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -90,7 +90,6 @@ function Home() {
           <section aria-labelledby="acct-h" className="space-y-3">
             <div className="flex items-center gap-2">
               <h2 id="acct-h" className="text-sm font-semibold uppercase tracking-wide text-[var(--fg-subtle)]">Balances</h2>
-              <EstimatedBadge />
               <Link href="/accounts" className="ml-auto text-sm text-[var(--accent)] hover:underline">Manage</Link>
             </div>
             <Card className="p-0 sm:p-0">
@@ -101,6 +100,7 @@ function Home() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{a.display_name}</p>
                         <p className="text-sm text-[var(--fg-subtle)]">{ACCOUNT_TYPE_LABEL[a.type]}{a.mask && ` · ••${a.mask}`}</p>
+                        <div className="mt-1"><BalanceStatusBadge balance={a.balance} currency={a.currency} /></div>
                       </div>
                       <Money minor={a.balance.posted_minor} currency={a.currency} className="font-semibold" />
                     </Link>

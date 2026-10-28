@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { AccountForm } from "@/components/account-form";
 import { AppShell } from "@/components/app-shell";
-import { EstimatedBadge, Money } from "@/components/money";
+import { BalanceStatusBadge, Money } from "@/components/money";
+import { ReconcileForm } from "@/components/reconcile-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,6 +27,7 @@ function Accounts() {
   const [showArchived, setShowArchived] = useState(false);
   const { data, error, reload, loading } = useLoad<Account[]>(`/api/accounts?include_archived=${showArchived}`);
   const [editing, setEditing] = useState<Account | "new" | null>(null);
+  const [checking, setChecking] = useState<Account | null>(null);
   const [flash, setFlash] = useState<{ kind: "success" | "error"; msg: string } | null>(null);
 
   async function act(a: Account, action: "archive" | "unarchive" | "delete") {
@@ -72,10 +74,12 @@ function Accounts() {
                     {ACCOUNT_TYPE_LABEL[a.type]}
                     {a.institution_name && ` · ${a.institution_name}`}
                     {a.mask && ` · ••${a.mask}`}
+                    {a.source === "imported" && " · Statements imported"}
+                    {a.source === "simulated" && " · Simulated demo data"}
                     {a.is_archived && " · Archived"}
                   </p>
                 </div>
-                <span className="ml-auto"><EstimatedBadge /></span>
+                <span className="ml-auto"><BalanceStatusBadge balance={a.balance} currency={a.currency} /></span>
               </div>
               <p className="mt-4 text-2xl font-semibold"><Money minor={a.balance.posted_minor} currency={a.currency} /></p>
               {(a.balance.pending_in > 0 || a.balance.pending_out > 0) && (
@@ -88,6 +92,8 @@ function Accounts() {
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link href={`/transactions?account=${a.id}`} className="inline-flex min-h-8 items-center rounded-md px-3 text-xs font-medium text-[var(--accent)] hover:bg-[var(--muted)]">View transactions</Link>
+                {!a.is_archived && <Link href={`/imports?account=${a.id}`} className="inline-flex min-h-8 items-center rounded-md px-3 text-xs font-medium text-[var(--accent)] hover:bg-[var(--muted)]">Import statement</Link>}
+                <Button size="sm" variant="ghost" onClick={() => setChecking(a)}>Check against bank</Button>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(a)}>Edit</Button>
                 <Button size="sm" variant="ghost" onClick={() => act(a, a.is_archived ? "unarchive" : "archive")}>{a.is_archived ? "Unarchive" : "Archive"}</Button>
                 {a.transaction_count === 0 && <Button size="sm" variant="ghost" onClick={() => act(a, "delete")}>Delete</Button>}
@@ -100,6 +106,9 @@ function Accounts() {
         <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
         Show archived accounts
       </label>
+      <Sheet title="Check against your bank" open={checking !== null} onClose={() => setChecking(null)}>
+        {checking && <ReconcileForm account={checking} onDone={reload} />}
+      </Sheet>
       <Sheet title={editing === "new" ? "Add account" : "Edit account"} open={editing !== null} onClose={() => setEditing(null)}>
         {editing !== null && (
           <AccountForm

@@ -14,10 +14,36 @@ export function Money({ minor, currency = "NGN", direction, className }: { minor
 
 export function EstimatedBadge() {
   return (
-    <span title="Calculated from your manual entries, not from your bank. Phase 3 adds statement reconciliation." className="rounded-full bg-[var(--muted)] px-2 py-0.5 text-xs text-[var(--fg-subtle)]">
-      Manual · estimated
+    <span title="Calculated from your entries and imports; not checked against a bank statement." className="rounded-full bg-[var(--muted)] px-2 py-0.5 text-xs text-[var(--fg-subtle)]">
+      Estimated
     </span>
   );
+}
+
+type BalanceLike = { status: "estimated" | "reconciled" | "unreconciled"; statement_as_of: string | null; difference_minor: number | null };
+
+/** Whether a balance has been checked against a bank statement (ledger rule B5). */
+export function BalanceStatusBadge({ balance, currency = "NGN" }: { balance: BalanceLike; currency?: string }) {
+  if (balance.status === "reconciled" && balance.statement_as_of) {
+    return (
+      <span title="Matches the balance on your bank statement for that date." className="rounded-full bg-[var(--accent-bg)] px-2 py-0.5 text-xs font-medium text-[var(--accent-strong)]">
+        ✓ Matches statement · {formatShort(balance.statement_as_of)}
+      </span>
+    );
+  }
+  if (balance.status === "unreconciled" && balance.difference_minor !== null) {
+    return (
+      <span title="Your bank statement shows a different balance for that date. A transaction may be missing, duplicated or entered wrongly." className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        Differs from statement by {formatMinor(Math.abs(balance.difference_minor), currency)}
+      </span>
+    );
+  }
+  return <EstimatedBadge />;
+}
+
+function formatShort(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(y!, (m ?? 1) - 1, d ?? 1)));
 }
 
 export const STATUS_LABEL: Record<string, string> = { posted: "Completed", pending: "Pending", failed: "Failed", reversed: "Reversed" };

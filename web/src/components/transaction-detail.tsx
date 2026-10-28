@@ -107,7 +107,7 @@ export function TransactionDetail({ id, accounts, onChanged, onOpenOther }: Prop
         {t.narration && (<><dt className="text-[var(--fg-subtle)]">Description</dt><dd className="break-words">{t.narration}</dd></>)}
         {t.notes && (<><dt className="text-[var(--fg-subtle)]">Notes</dt><dd className="break-words">{t.notes}</dd></>)}
         <dt className="text-[var(--fg-subtle)]">Source</dt>
-        <dd>Entered manually</dd>
+        <dd>{({ manual: "Entered manually", csv: "Imported (CSV statement)", xlsx: "Imported (Excel statement)", xls: "Imported (Excel statement)", simulated: "Simulated demo data" } as Record<string, string>)[t.source] ?? t.source}</dd>
       </dl>
 
       {(t.reversed_by_id || t.reverses_id || t.refund_of_id) && (

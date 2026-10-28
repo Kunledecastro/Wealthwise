@@ -29,6 +29,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  experimental: {
+    // Let statement uploads reach the API intact; the API enforces the real limit
+    // (UPLOAD_MAX_MB, at most 50) and returns a clear "file too large" message.
+    proxyClientMaxBodySize: "55mb",
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${API_INTERNAL_URL}/api/:path*` }];
   },
